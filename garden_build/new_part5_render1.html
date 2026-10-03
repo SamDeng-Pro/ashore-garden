@@ -1,0 +1,827 @@
+<script>
+/* ==================== 渲染层：首页 ==================== */
+function renderHome(){
+  var dsk=daysBetween(todayStr(),EXAM_SK);
+  var dgk=daysBetween(todayStr(),EXAM_GK);
+  $('kpi-sk').textContent=dsk>0?dsk+'天':'今天';
+  $('kpi-gk').textContent=dgk>0?dgk+'天':'已开考';
+  $('kpi-sun').textContent=Math.round(totalHours()*10)/10;
+  $('kpi-streak').textContent=streakDays()+'天';
+  $('home-whisper').textContent=whisper();
+  renderGardenMini();
+  renderHomeCheckin();
+  renderHomeStats();
+  renderTodayPlan();
+}
+
+/* ==================== 今日计划（计划执行闭环①） ==================== */
+/* 周次计算：W1 从 2026-10-05（周一）开始 */
+function planWeekNum(t){
+  var w=Math.floor(daysBetween('2026-10-05',t)/7)+1;
+  return w>0?w:0;
+}
+/* 今日计划对象：{week主题, dayTemplate, weekPlan} */
+function getTodayPlan(t){
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var stages=plan.stages||[];
+  var weekly=plan.weekly_template||[];
+  var wk=planWeekNum(t);
+  // 找当周计划
+  var wp=null;
+  for(var i=0;i<stages.length;i++){
+    var list=(stages[i].weeks||[]);
+    for(var j=0;j<list.length;j++){
+      var wn=parseInt(String(list[j].w||'').replace(/[^0-9]/g,''),10);
+      if(!isNaN(wn)&&wn===wk){ wp=list[j]; break; }
+    }
+    if(wp) break;
+  }
+  // 周几模板（JS: 0=周日）
+  var dayMap=['周日','周一','周二','周三','周四','周五','周六'];
+  var dayName=dayMap[new Date(t+'T00:00:00').getDay()];
+  var dt=null;
+  weekly.forEach(function(w){ if(w.day===dayName) dt=w; });
+  return {week:wk, weekPlan:wp, dayTemplate:dt, dayName:dayName};
+}
+function renderTodayPlan(){
+  var el=$('home-plan');
+  if(!el) return;
+  var t=todayStr();
+  var p=getTodayPlan(t);
+  var html='';
+  if(!p.weekPlan && !p.dayTemplate){
+    el.innerHTML=sanitizeHtml('<div style="font-size:13px;color:var(--ink2)">计划未覆盖到今天，去「计划」页看整体安排</div>');
+    return;
+  }
+  // 日期头 + 复盘入口
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
+    +'<span style="font-size:12px;color:var(--ink3)">'+esc(t)+' · '+esc(p.dayName)+(p.week?(' · W'+p.week):'')+'</span>'
+    +'<button class="chip'+(isReviewDay(p.dayName)?' on':'')+'" data-navreview="1">📅 复盘'+(isReviewDay(p.dayName)?'（今天）':'')+'</button>'
+    +'</div>';
+  // 本周主题（叠加已确认调整）
+  if(p.weekPlan){
+    html+='<div style="background:var(--green-l);border-radius:10px;padding:10px 12px;margin-bottom:8px">'
+      +'<div style="font-size:13px;font-weight:700;color:var(--green-d)">📋 本周（'+esc(p.weekPlan.w)+'）：'+esc(p.weekPlan.topic)+'</div>'
+      +'<div style="font-size:12px;color:var(--ink2);margin-top:2px">'+esc(p.weekPlan.detail)+'</div>'
+      +'<\x2Fdiv>';
+  }
+  // 已确认的计划调整（紫卡展示，实时反映调整层）
+  var adj=(typeof activeAdjustment==='function')?activeAdjustment(p.week):null;
+  if(adj){
+    html+='<div style="background:#F1EAF8;border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:3px solid #8B6FB8">'
+      +'<div style="font-size:13px;font-weight:700;color:#6B4FA0">📌 已确认调整 <span style="font-weight:400;font-size:11px;color:#9B85B8">'+esc(adj.date)+'确认</span></div>'
+      +'<div style="font-size:12px;color:#6B4FA0;margin-top:3px;line-height:1.8">';
+    adj.changes.forEach(function(c){ html+='· '+esc(c.text)+'<br>'; });
+    html+='</div><\x2Fdiv>';
+  }
+  // 今日动作
+  if(p.dayTemplate){
+    var bg=p.dayTemplate.type==='buffer'?'var(--gold-l)':'#fff';
+    var tag=p.dayTemplate.type==='main'?'<span class="tag">主力日</span>':p.dayTemplate.type==='buffer'?'<span class="tag o">缓冲日</span>':'<span class="tag g">轻量日</span>';
+    html+='<div style="display:flex;align-items:center;gap:8px;background:'+bg+';border:1px solid var(--line);border-radius:10px;padding:10px 12px">'
+      +tag
+      +'<span style="flex:1;font-size:13px;font-weight:600">'+esc(p.dayTemplate.plan)+'</span>'
+      +'<span style="font-size:12px;color:var(--green-d);font-weight:700">'+esc(p.dayTemplate.hours)+'</span>'
+      +'<\x2Fdiv>';
+  }
+  // 近期目标差距（动态：第一个未全达成的里程碑）
+  if(typeof goalGapSummary==='function'){
+    var gg=goalGapSummary();
+    if(gg){
+      html+='<div style="margin-bottom:8px;background:#fff;border:1px dashed var(--gold);border-radius:10px;padding:8px 10px;font-size:12px;line-height:1.8">'
+        +'<b style="color:var(--gold-d)">🎯 '+esc(gg.date)+'目标进度</b>　'
+        +gg.items.slice(0,3).map(function(it){ return esc(it.label)+' '+goalLineText(it)+' '+goalIcon(it.g.st); }).join('　')
+        +'</div>';
+    }
+  }
+  // 已打卡则显示比对结果，否则提示去打卡
+  if(checkedToday()){
+    var cmp=comparePlanActual(t,p);
+    html+=renderPlanCompare(cmp);
+  }else{
+    html+='<div style="font-size:12px;color:var(--ink3);margin-top:8px">完成学习后去打卡，系统会自动比对计划完成度 ✓</div>';
+  }
+  el.innerHTML=sanitizeHtml(html);
+}
+/* 周一三五复盘日 */
+function isReviewDay(dayName){ return dayName==='周一'||dayName==='周三'||dayName==='周五'; }
+
+/* 比对：今日计划 vs 实际打卡（含偏差分级与纠偏动作） */
+function comparePlanActual(t,p){
+  var res={ok:[],diff:[],suggest:'',level:'ok',action:''};
+  var hours=0, mods=[];
+  state.checkin.forEach(function(c){
+    if(String(c['日期']||'').slice(0,10)!==t) return;
+    hours+=num(c['学习时长'])||0;
+    var note=String(c['今日收获']||'');
+    var m=note.match(/模块：([^；]+)/);
+    if(m) mods=mods.concat(m[1].split('、'));
+  });
+  state.study.forEach(function(s){
+    if(String(s['日期']||'').slice(0,10)!==t) return;
+    if(String(s['类型']||'')==='历史基线') return;
+    if(s['模块']&&mods.indexOf(s['模块'])<0) mods.push(s['模块']);
+  });
+  var dt=p.dayTemplate;
+  // 时长比对
+  if(dt){
+    var target=parseFloat(dt.hours)||0; // "2.5h"/"0.5-1h"取下限
+    if(dt.hours.indexOf('-')>=0) target=parseFloat(dt.hours);
+    if(hours>=target*0.8){
+      res.ok.push('时长达标：实际 '+hours+'h / 计划 '+dt.hours);
+    }else if(hours>0){
+      res.diff.push('时长不足：实际 '+hours+'h，计划 '+dt.hours+'（还差 '+Math.max(0,Math.round((target-hours)*10)/10)+'h）');
+    }else{
+      res.diff.push('还没记录学习时长（计划 '+dt.hours+'）');
+    }
+    // 内容比对：今天计划里提到的模块是否打了卡
+    var planMods=[];
+    var kwMap={'申论':['申论'],'时政':['时事政治','政治理论'],'政治理论':['政治理论'],'资料分析':['资料分析'],'数量':['数量关系'],'言语':['言语理解'],'判断':['判断推理'],'常识':['常识判断'],'套卷':['模考']};
+    for(var kw in kwMap){
+      if(dt.plan.indexOf(kw)>=0){ planMods=planMods.concat(kwMap[kw]); }
+    }
+    var hit=planMods.some(function(m){ return mods.some(function(x){ return x.indexOf(m)>=0||m.indexOf(x)>=0; }); });
+    if(planMods.length===0){ /* 模板未提模块，跳过 */ }
+    else if(hit){ res.ok.push('内容对口：今天练的模块与计划一致'); }
+    else if(hours>0){ res.diff.push('内容偏差：计划「'+dt.plan+'」，实际练的是 '+(mods.join('、')||'未记录')); }
+  }
+  // 偏差分级 + 纠偏动作
+  var hourGap=0;
+  res.diff.forEach(function(s){
+    var m=s.match(/还差 ([0-9.]+)h/);
+    if(m) hourGap=Math.max(hourGap,parseFloat(m[1]));
+  });
+  var contentOff=res.diff.some(function(s){ return s.indexOf('内容偏差')>=0; });
+  var noRecord=res.diff.some(function(s){ return s.indexOf('还没记录')>=0; });
+  if(res.diff.length===0&&res.ok.length){
+    res.level='ok'; res.suggest='按计划推进，保持这个节奏 🌱';
+  }else if(hourGap>1||(contentOff&&noRecord)){
+    res.level='red';
+    res.suggest='明显偏差，别慌——看下面两个纠偏选项，选一个就行';
+    res.action='red';
+  }else if(res.diff.length){
+    res.level='yellow';
+    res.suggest='轻度偏差：晚上补齐，或顺延到周日 buffer 时间，不追责';
+    res.action='yellow';
+  }
+  return res;
+}
+function renderPlanCompare(cmp){
+  var lvColor=cmp.level==='ok'?'var(--green-d)':cmp.level==='yellow'?'var(--gold-d)':'var(--red)';
+  var lvText=cmp.level==='ok'?'✅ 按计划':cmp.level==='yellow'?'🟡 轻度偏差':'🔴 明显偏差';
+  var html='<div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+    +'<span style="font-size:12px;font-weight:700;color:var(--ink2)">🔍 计划比对</span>'
+    +'<span style="font-size:11px;font-weight:800;color:'+lvColor+'">'+lvText+'</span></div>';
+  cmp.ok.forEach(function(s){
+    html+='<div style="font-size:12px;color:var(--green-d);margin-bottom:3px">✓ '+esc(s)+'</div>';
+  });
+  cmp.diff.forEach(function(s){
+    html+='<div style="font-size:12px;color:var(--orange);margin-bottom:3px">△ '+esc(s)+'</div>';
+  });
+  if(cmp.suggest) html+='<div style="font-size:11px;color:var(--ink3);margin-top:4px;line-height:1.6">'+esc(cmp.suggest)+'</div>';
+  // 纠偏选项
+  if(cmp.action==='yellow'){
+    html+='<div style="margin-top:8px;background:var(--gold-l);border-radius:9px;padding:8px 10px;font-size:12px;line-height:1.8">'
+      +'<b style="color:var(--gold-d)">🔧 纠偏二选一：</b><br>① 晚上补 0.5~1h<br>② 顺延到周日 buffer，本周不追</div>';
+  }else if(cmp.action==='red'){
+    html+='<div style="margin-top:8px;background:#FBEAE7;border-radius:9px;padding:8px 10px;font-size:12px;line-height:1.8">'
+      +'<b style="color:var(--red)">🔧 纠偏二选一：</b><br>① 今天集中 1.5h 补主线（申论/资料/政治）<br>② 砍掉本周次要项（数量/常识），主线不动<br>'
+      +'<span style="color:var(--ink3)">连续两周同向滞后的话，周三/周五复盘时 AI 会建议下调计划量</span></div>';
+  }
+  html+='</div>';
+  return html;
+}
+
+function whisper(){
+  var h=new Date().getHours();
+  var hi=h<11?'早安':h<14?'午安':h<18?'下午好':'晚上好';
+  var ck=checkedToday(), st=streakDays();
+  if(!ck && st===0){ return hi+'，花园在等你种下今天第一朵花'; }
+  if(!ck){ return hi+'，昨天坚持了 '+st+' 天，今天也来浇一勺水吧'; }
+  return hi+'，今天已浇水，花园正在为你生长 🌱';
+}
+
+/* --- 首页花园现状：当前成长中的一朵花（花盆+进度条+阶段说明） --- */
+function renderGardenMini(){
+  var h=totalHours();
+  var pots=flowerProgress(h);
+  var cur=currentGrowingFlower(h);
+  $('garden-mini-svg').innerHTML=sanitizeHtml(gardenGridSVG(640,220,pots,cur));
+  var label;
+  if(pots.length===0){ label='种子已播下，开始学习来浇水吧'; }
+  else{ label='已开花 '+totalFlowers()+' 朵 · 累计 '+Math.round(h*10)/10+' 小时'; }
+  $('garden-mini-label').textContent=label;
+  if(cur){
+    var stName=STAGES[cur.stage];
+    var unitWord = cur.stage===STAGE_BLOOM ? ' 完全绽放' : (cur.stage===STAGE_SEED?' 萌芽':' 开花');
+    $('garden-mini-hint').textContent='「'+cur.name+'」'+stName+'中，还差 '+cur.hoursLeft+' 小时'+(unitWord);
+  }else if(pots.length>0){
+    $('garden-mini-hint').textContent='所有花都开了，你是花园之王！';
+  }else{
+    $('garden-mini-hint').textContent='开始学习，种下你的第一朵花吧';
+  }
+  // 阳光雨：首页启动（ gardenGridSVG 已渲染出 sun-zone ）
+  startSunRain();
+}
+
+/* --- 首页今日打卡状态 --- */
+function renderHomeCheckin(){
+  var el=$('home-checkin');
+  var ck=checkedToday();
+  var t=totalHours();
+  var todayH=0;
+  state.checkin.forEach(function(c){ if(String(c['日期']||'').slice(0,10)===todayStr()) todayH+=num(c['学习时长'])||0; });
+  var html='';
+  if(ck){
+    html='<div style="display:flex;align-items:center;gap:12px;padding:6px 0">'
+      +'<div style="width:44px;height:44px;border-radius:50%;background:var(--green-l);display:flex;align-items:center;justify-content:center;font-size:22px">✅<\x2Fdiv>'
+      +'<div><div style="font-weight:700">今天已打卡<\x2Fdiv><div style="font-size:12px;color:var(--ink2)">学习 '+todayH+' 小时 · 累计 '+Math.round(t*10)/10+' 小时<\x2Fdiv><\x2Fdiv><\x2Fdiv>';
+  }else{
+    html='<div style="display:flex;align-items:center;gap:12px;padding:6px 0">'
+      +'<div style="width:44px;height:44px;border-radius:50%;background:var(--rose-l);display:flex;align-items:center;justify-content:center;font-size:22px">🌱<\x2Fdiv>'
+      +'<div><div style="font-weight:700">今天还没打卡<\x2Fdiv><div style="font-size:12px;color:var(--ink2)">浇一勺水，花园就会长一点<\x2Fdiv><\x2Fdiv><\x2Fdiv>';
+  }
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* --- 首页学习统计总览 --- */
+function renderHomeStats(){
+  var el=$('home-stats');
+  var stats=moduleStats();
+  if(stats.length===0){
+    el.innerHTML=sanitizeHtml('<div class="empty"><div class="ic">📊<\x2Fdiv>还没有学习记录，先去打卡记录今天的学习吧<\x2Fdiv>');
+    return;
+  }
+  el.innerHTML=sanitizeHtml(barChart(stats,{target:80}));
+}
+
+/* --- 模块正确率统计（学习记录表，来自打卡） --- */
+function moduleStats(){
+  var map={};
+  state.study.forEach(function(s){
+    var m=s['模块']; if(!m) return;
+    if(!map[m]) map[m]={q:0,w:0};
+    map[m].q+=num(s['题量'])||0;
+    map[m].w+=num(s['错题数'])||0;
+  });
+  var colors={'政治理论':'#6F9E4F','常识判断':'#8FB36A','言语理解':'#E79BB5','判断推理':'#D9869B','数量关系':'#E86A32','资料分析':'#D4A94E','申论':'#B98A2F','时事政治':'#7A9BB5'};
+  var rows=[];
+  for(var k in map){ if(map[k].q>0) rows.push({name:k,v:(map[k].q-map[k].w)/map[k].q*100,color:colors[k]||'#6F9E4F'}); }
+  rows.sort(function(a,b){ return a.v-b.v; });
+  return rows;
+}
+
+/* ==================== 量化目标追踪（目标线 × 打卡实际值 自动对比） ==================== */
+/* 从里程碑字符串提取数值："≥60%"→60、"8篇"→8、"保55%(只做基础)"→55、"3朵"→3 */
+function parseTargetNum(s){
+  if(s==null) return null;
+  var m=String(s).match(/(\d+)/);
+  return m?parseInt(m[1],10):null;
+}
+/* 单项目标对比：st= ok✅达成 / near🟡接近(≥60%进度) / far🔴差距大 */
+function goalItem(label,target,actual){
+  if(target==null||target<=0||actual==null) return null;
+  var pct=Math.min(999,Math.round(actual/target*100));
+  var st=actual>=target?'ok':(pct>=60?'near':'far');
+  return {label:label,target:target,actual:actual,pct:pct,st:st};
+}
+function goalIcon(st){ return st==='ok'?'✅':(st==='near'?'🟡':'🔴'); }
+function goalLineText(it){
+  if(it.unit==='%') return Math.round(it.g.actual)+'%/'+it.g.target+'%';
+  return it.g.actual+'/'+it.g.target+it.unit;
+}
+/* 里程碑 → 各项实际对比（数据源：刷题打卡moduleStats + 申论练笔 + 花园朵数，全部实时） */
+function milestoneProgress(m){
+  var items=[];
+  var ms=moduleStats(); var mod={}; ms.forEach(function(s){ mod[s.name]=s.v; });
+  var shenlunLen=(lsGet('my_shenlun')||[]).length;
+  var flowers=totalFlowers();
+  var g;
+  g=goalItem('申论',parseTargetNum(m.essay),shenlunLen); if(g) items.push({icon:'📝',label:'申论',text:m.essay,unit:'篇',g:g});
+  g=goalItem('政治',parseTargetNum(m.zzll),mod['政治理论']); if(g) items.push({icon:'📕',label:'政治',text:m.zzll,unit:'%',g:g});
+  g=goalItem('资料',parseTargetNum(m.zlfx),mod['资料分析']); if(g) items.push({icon:'📊',label:'资料',text:m.zlfx,unit:'%',g:g});
+  g=m.yysd?goalItem('言语',parseTargetNum(m.yysd),mod['言语理解']):null; if(g) items.push({icon:'💬',label:'言语',text:m.yysd,unit:'%',g:g});
+  g=m.shuliang?goalItem('数量',parseTargetNum(m.shuliang),mod['数量关系']):null; if(g) items.push({icon:'🔢',label:'数量',text:m.shuliang,unit:'%',g:g});
+  g=goalItem('花园',parseTargetNum(m.flowers),flowers); if(g) items.push({icon:'🌸',label:'花园',text:m.flowers,unit:'朵',g:g});
+  return items;
+}
+/* 当前活跃目标 = 按顺序第一个有未达标项的里程碑；全部达成则取最后一个 */
+function currentMilestoneIdx(){
+  var ms=(window.KB_DATA.study_plan.milestones)||[];
+  for(var i=0;i<ms.length;i++){
+    var its=milestoneProgress(ms[i]);
+    if(its.length&&its.some(function(it){ return it.g.st!=='ok'; })) return i;
+  }
+  return ms.length-1;
+}
+/* 首个未全达成里程碑的差距摘要（供首页/复盘中心调用） */
+function goalGapSummary(){
+  var ms=(window.KB_DATA.study_plan.milestones)||[];
+  var idx=currentMilestoneIdx();
+  if(idx<0||!ms[idx]) return null;
+  var items=milestoneProgress(ms[idx]).filter(function(it){ return it.g.st!=='ok'; });
+  return items.length?{date:ms[idx].date,items:items}:null;
+}
+
+/* ==================== 渲染层：花园页（禅境花园 · 每花一朵 3阶段） ==================== */
+function renderGarden(){
+  var h=totalHours();
+  $('g-total-h').textContent=Math.round(h*10)/10;
+  $('g-flower').textContent=totalFlowers();
+  var nx=nextUnlock(h);
+  $('g-next').textContent=nx?nx.name:'—';
+  var pots=flowerProgress(h);
+  $('garden-grid').innerHTML=sanitizeHtml(zenGardenSVG(pots));
+  renderGardenProgress();
+}
+
+/* 花园里的花盆阵列：每朵花一盆（已开始的才显示），按 3 阶段成长 */
+function gardenPots(h){
+  return flowerProgress(h);
+}
+
+/* 禅境花园总览：木架背景 + 一排排花盆（每花一朵） */
+function zenGardenSVG(pots){
+  var W=640, col=4, padX=18, gapX=10, potW=(W-padX*2-gapX*(col-1))/col;
+  var potH=potW*1.18;
+  if(!pots || pots.length===0){
+    return '<svg viewBox="0 0 '+W+' 240" width="100%">'
+      +'<rect width="'+W+'" height="240" fill="#C7A45C"/>'
+      +'<rect width="'+W+'" height="170" fill="#D9C48E"/>'
+      +'<text x="'+W/2+'" y="120" font-size="15" fill="#8A6B3F" text-anchor="middle">🌱 花园已备好，开始学习来种下第一株花吧<\x2Ftext><\x2Fsvg>';
+  }
+  var rows=Math.ceil(pots.length/col);
+  var H=rows*(potH+26)+40;
+  var html='<svg viewBox="0 0 '+W+' '+H+'" width="100%">';
+  // 背景：禅境花园的木架 + 天空 + 阳光
+  html+='<rect width="'+W+'" height="'+H+'" fill="#F7E7C3"/>';                 // 暖阳天空
+  html+='<circle cx="'+(W-56)+'" cy="44" r="26" fill="#F9D96B" opacity=".95"/>';
+  html+='<circle cx="'+(W-56)+'" cy="44" r="38" fill="#F9D96B" opacity=".25"/>';
+  html+='<rect y="'+(H-24)+'" width="'+W+'" height="24" fill="#A9814B"/>';      // 木架底座
+  html+='<rect y="'+(H-24)+'" width="'+W+'" height="4" fill="#C49A62"/>';
+  pots.forEach(function(p,idx){
+    var r=Math.floor(idx/col), c=idx%col;
+    var x=padX+c*(potW+gapX);
+    var y=30+r*(potH+26);
+    // 每盆可点击看特写
+    html+='<g data-pot="'+idx+'" style="cursor:pointer">';
+    // 木架搁板（每排下方一条）
+    if(c===0){ html+='<rect x="'+(padX-8)+'" y="'+(y+potH-8)+'" width="'+(W-padX*2+16)+'" height="10" rx="4" fill="#B98A55" stroke="#9A6B3A" stroke-width="1"/>'; }
+    // 花盆里的花（3阶段写实风，开花期花骨朵按进度渐进）
+    html+='<g transform="translate('+x+','+y+')">'+zenFlowerSVG(p.variety,p.stage,potW,potH,p.stageProgress)+'<\x2Fg>';
+    // 未开花的盆，顶部显示"还差多少"进度标签
+    if(!p.done){
+      html+='<text x="'+(x+potW/2)+'" y="'+(y-4)+'" font-size="10" fill="#8A6B3F" text-anchor="middle" font-weight="600">还差 '+p.hoursLeft+'h<\x2Ftext>';
+    }
+    html+='<\x2Fg>';
+  });
+  html+='<\x2Fsvg>';
+  return html;
+}
+
+/* 点击花盆放大查看该株花的特写 */
+function openPlot(idx){
+  var h=totalHours();
+  var pots=flowerProgress(h);
+  var p=pots[idx];
+  if(!p) return;
+  var v=VARIETIES[p.variety];
+  var stName=STAGES[p.stage];
+  var html='<h3 style="margin-bottom:4px">'+esc(v.name)+'<\x2Fh3>'
+    +'<div style="font-size:12px;color:var(--ink2);margin-bottom:14px">'+esc(stName)+' · '+esc(v.bloom)+'<\x2Fdiv>'
+    +'<div style="text-align:center;padding:10px 0">'+zenFlowerSVG(p.variety,p.stage,150,177,p.stageProgress)+'<\x2Fdiv>';
+  if(p.done){
+    html+='<div class="rule-card gold" style="margin-top:14px"><h4>🌼 已绽放<\x2Fh4><p>这朵'+esc(v.name)+'已完全绽放，见证了你 '+(p.idx+1)*FLOWER_TOTAL_HOURS+' 小时的坚持。<\x2Fp><\x2Fdiv>';
+  }else{
+    var nextStageName = p.stage===STAGE_SEED?'萌芽期':'开花期';
+    var needLabel = p.stage===STAGE_SEED?STAGE_HOURS[1]:STAGE_HOURS[2];
+    html+='<div class="rule-card rose" style="margin-top:14px"><h4>🌱 '+esc(stName)+'中<\x2Fh4>'
+      +'<p>当前阶段还差 <b>'+p.hoursLeft+' 小时</b>进入「'+nextStageName+'」。'
+      +'（本阶段共需 '+needLabel+' 小时）<\x2Fp><\x2Fdiv>';
+  }
+  openSheet(html);
+}
+
+/* 首页 mini 花园：左侧当前成长的一朵花（花盆+进度条+阶段文字），右侧已开花的小图 */
+function gardenGridSVG(width,height,pots,cur){
+  width=width||640; height=height||220;
+  // 空状态：左侧提示 + 右侧阳光掉落区（保持花园可玩性）
+  if(!pots || pots.length===0){
+    var emptyHtml='<div class="garden-row" style="min-height:160px">'
+      +'<div style="flex:1;padding:10px 6px;text-align:center;color:var(--ink2)">'
+      +'<div style="font-size:40px;margin-bottom:6px">🌱<\x2Fdiv>'
+      +'<div style="font-size:13px">花盆已备好，去打卡浇第一勺水吧<\x2Fdiv>'
+      +'<\x2Fdiv>'
+      +'<div class="garden-suncol">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between">'
+      +'<span style="font-size:11px;color:var(--ink3)">花圃</span>'
+      +'<span class="sun-count" id="sun-count">☀️ '+(lsGet('sun_collected')||0)+'</span>'
+      +'<\x2Fdiv>'
+      +'<div class="sun-zone" id="sun-zone" title="点阳光收集它！"><\x2Fdiv>'
+      +'<\x2Fdiv>'
+      +'<\x2Fdiv>';
+    return emptyHtml;
+  }
+  // 当前成长的花（未完成的第一朵）
+  var growing = cur || null;
+  var bloomed = pots.filter(function(p){return p.done;});
+  var html='<div class="garden-row" style="min-height:'+(height-8)+'px">';
+
+  /* ---- 左侧：当前成长中的一朵（大图 + 进度条 + 阶段说明） ---- */
+  if(growing){
+    var stName=STAGES[growing.stage];
+    var progPct=Math.round(growing.stageProgress*100);
+    var nextStage = growing.stage===STAGE_SEED?'萌芽期':(growing.stage===STAGE_SPROUT?'开花期':'完全绽放');
+    var remainText = growing.stage===STAGE_BLOOM
+      ? '还差 '+growing.hoursLeft+' 小时完全绽放'
+      : '还差 '+growing.hoursLeft+' 小时到'+nextStage;
+    html+='<div class="garden-cur">'
+      +'<div class="gc-svg" style="width:120px;height:142px;margin:0 auto">'+zenFlowerSVG(growing.variety,growing.stage,120,142,growing.stageProgress)+'<\x2Fdiv>'
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--ink);margin-bottom:2px">'+esc(growing.name)+'</div>'
+      +'<div style="font-size:11px;color:var(--rose-d);font-weight:600">'+stName+' '+progPct+'%</div>'
+      +'<\x2Fdiv>'
+      +'<\x2Fdiv>';
+    // 进度条 + 说明
+    html+='<div class="garden-info">'
+      +'<div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px">'+esc(growing.name)+' · '+stName+'<\x2Fdiv>'
+      +'<div style="height:12px;background:var(--bg2);border-radius:6px;overflow:hidden;margin-bottom:6px">'
+      +'<div style="height:100%;width:'+progPct+'%;background:linear-gradient(90deg,#8CC63F,#6F9E4F);border-radius:6px;transition:width .5s"><\x2Fdiv><\x2Fdiv>'
+      +'<div style="font-size:12px;color:var(--ink2);margin-bottom:10px">'+remainText+'<\x2Fdiv>'
+      // 三阶段指示
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+      +STAGES.map(function(st,i){
+        var cls = growing.done?'done':(growing.stage>i?'done':(growing.stage===i?'current':'todo'));
+        return '<span class="stage-dot '+cls+'">'+st+'</span>';
+      }).join('')
+      +'<\x2Fdiv>'
+      +'<\x2Fdiv>';
+  }else{
+    html+='<div style="flex:1;text-align:center;color:var(--ink2);font-size:13px">🌼 所有花都已绽放，你是花园之王！<\x2Fdiv>';
+  }
+
+  /* ---- 右侧：阳光掉落区（PvZ 风）——首页只展示当前成长花，已开花去花园页看 ---- */
+  html+='<div class="garden-suncol">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between">'
+    +'<span style="font-size:11px;color:var(--ink3)">'+(bloomed.length?('🌼已开 '+bloomed.length+' 朵'):'花圃')+'</span>'
+    +'<span class="sun-count" id="sun-count">☀️ '+(lsGet('sun_collected')||0)+'</span>'
+    +'<\x2Fdiv>'
+    +'<div class="sun-zone" id="sun-zone" title="点阳光收集它！"><\x2Fdiv>'
+    +'<\x2Fdiv>';
+  html+='<\x2Fdiv>';
+  return html;
+}
+
+/* ---- PvZ 阳光：SVG + 掉落收集（纯本地趣味，不影响真实数据） ---- */
+function sunSVG(size){
+  size=size||44;
+  var c=size/2, r1=size*0.46, r2=size*0.30;
+  var rays='';
+  for(var i=0;i<10;i++){
+    var a=i*Math.PI/5, x1=c+Math.cos(a)*r2*1.1, y1=c+Math.sin(a)*r2*1.1;
+    var x2=c+Math.cos(a)*(r1+3), y2=c+Math.sin(a)*(r1+3);
+    rays+='<line x1="'+x1.toFixed(1)+'" y1="'+y1.toFixed(1)+'" x2="'+x2.toFixed(1)+'" y2="'+y2.toFixed(1)+'" stroke="#FFD23F" stroke-width="'+(size*0.06).toFixed(1)+'" stroke-linecap="round"/>';
+  }
+  return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'">'
+    +rays
+    +'<circle cx="'+c+'" cy="'+c+'" r="'+r1+'" fill="#FFDD33"/>'
+    +'<circle cx="'+c+'" cy="'+c+'" r="'+r2+'" fill="#FFEE88"/>'
+    +'<circle cx="'+(c-r2*0.32)+'" cy="'+(c-r2*0.25)+'" r="'+(size*0.035)+'" fill="#B8860B" opacity=".85"/>'
+    +'<circle cx="'+(c+r2*0.32)+'" cy="'+(c-r2*0.25)+'" r="'+(size*0.035)+'" fill="#B8860B" opacity=".85"/>'
+    +'<path d="M '+(c-r2*0.42)+' '+(c+r2*0.18)+' Q '+c+' '+(c+r2*0.62)+' '+(c+r2*0.42)+' '+(c+r2*0.18)+'" stroke="#B8860B" stroke-width="'+(size*0.04)+'" fill="none" stroke-linecap="round"/>'
+    +'<\x2Fsvg>';
+}
+var _sunTimer=null;
+function startSunRain(){
+  stopSunRain();
+  var zone=$('sun-zone'); if(!zone) return;
+  var collected=lsGet('sun_collected')||0;
+  var spawn=function(){
+    if(!document.getElementById('sun-zone')){ stopSunRain(); return; }
+    if(state.route!=='home'){ return; }
+    var drop=document.createElement('div');
+    drop.className='sun-drop';
+    var zoneW=zone.clientWidth||320, zoneH=zone.clientHeight||140;
+    drop.style.left=(Math.random()*(zoneW-50)+6)+'px';
+    drop.style.setProperty('--fall-h',(zoneH+70)+'px');
+    drop.style.animationDuration=(3.6+Math.random()*2.4)+'s';
+    drop.innerHTML=sanitizeHtml(sunSVG(44));
+    drop.addEventListener('click',function(ev){
+      ev.stopPropagation();
+      if(drop._got) return; drop._got=true;
+      collected++; lsSet('sun_collected',collected);
+      var cnt=$('sun-count'); if(cnt) cnt.textContent='☀️ '+collected;
+      var fly=document.createElement('div');
+      fly.className='sun-collected';
+      fly.style.left=drop.style.left;
+      fly.style.top=(drop.getBoundingClientRect().top-zone.getBoundingClientRect().top)+'px';
+      fly.style.setProperty('--fly-x',(10-Math.random()*40)+'px');
+      fly.style.setProperty('--fly-y',(-zoneH-30)+'px');
+      fly.innerHTML=sanitizeHtml(sunSVG(36));
+      zone.appendChild(fly);
+      setTimeout(function(){ fly.remove(); },600);
+      drop.remove();
+    });
+    zone.appendChild(drop);
+    setTimeout(function(){ drop.remove(); },7000);
+  };
+  _sunTimer=setInterval(spawn,3200);
+  setTimeout(spawn,600);
+}
+function stopSunRain(){ if(_sunTimer){ clearInterval(_sunTimer); _sunTimer=null; } }
+
+function renderGardenProgress(){
+  var el=$('garden-progress');
+  var h=totalHours();
+  var pots=flowerProgress(h);
+  var html='';
+  if(pots.length===0){
+    html='<div class="empty"><div class="ic">🌱<\x2Fdiv>还没有花，先去打卡积累学习时长吧<\x2Fdiv>';
+  }
+  pots.forEach(function(p){
+    // 三阶段进度点
+    var stageDots='';
+    for(var s=0;s<3;s++){
+      var stName=STAGES[s];
+      var reached = p.done ? true : (p.stage>s);
+      var current = !p.done && p.stage===s;
+      var cls = reached?'done':(current?'current':'todo');
+      stageDots+='<span class="stage-dot '+cls+'">'+stName+'</span>';
+    }
+    var statusText = p.done ? '已开花' : (p.stage===STAGE_SEED?'还差 '+p.hoursLeft+'h 萌芽':p.stage===STAGE_SPROUT?'还差 '+p.hoursLeft+'h 开花':'还差 '+p.hoursLeft+'h 绽放');
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      +'<div style="flex:none;width:40px;height:47px">'+zenFlowerSVG(p.variety,p.stage,40,47,p.stageProgress)+'<\x2Fdiv>'
+      +'<div style="flex:1">'
+      +'<div style="font-size:14px;font-weight:600">'+esc(p.name)+' <span style="font-size:11px;color:var(--ink3)">'+(p.done?'已开花':statusText)+'<\x2Fspan><\x2Fdiv>'
+      +'<div style="display:flex;gap:6px;margin-top:6px">'+stageDots+'<\x2Fdiv>'
+      +'<div style="height:6px;background:var(--bg2);border-radius:3px;margin-top:6px;overflow:hidden"><div style="height:100%;width:'+(Math.round(p.stageProgress*100))+'%;background:linear-gradient(90deg,var(--green),var(--gold));border-radius:3px"><\x2Fdiv><\x2Fdiv>'
+      +'<\x2Fdiv>'
+      +'<div style="flex:none;font-size:12px;color:var(--ink2);text-align:right">'+esc(p.bloom)+'<\x2Fdiv><\x2Fdiv>';
+  });
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* ==================== 渲染层：花园说明页 ==================== */
+function renderGardenHelp(){
+  var rules=$('help-rules');
+  rules.innerHTML=sanitizeHtml(''
+    +'<div class="rule-card rose"><h4>🌱 三阶段成长<\x2Fh4><p>每朵花经历三个阶段：<b>种子期(2小时) → 萌芽期(4小时) → 开花期(10小时)</b>，累计学满 16 小时即完全绽放。<\x2Fp><\x2Fdiv>'
+    +'<div class="rule-card gold"><h4>💧 阳光雨露怎么来<\x2Fh4><p>你在「打卡」页提交的学习时长就是浇灌花朵的「阳光雨露」，无需手动浇水，系统自动累积推动成长。<\x2Fp><\x2Fdiv>'
+    +'<div class="rule-card"><h4>🔀 时间溢出自动顺延<\x2Fh4><p>一次打卡填多了也不用担心：超出的时长会自动<b>顺序累计</b>到下一阶段。比如种子期还剩 1 小时，你填了 3 小时，多出的 2 小时自动进入萌芽期；若当前花已到开花期还剩 3 小时，你填了 4 小时，多出的 1 小时会继续累计到<b>下一朵花</b>。<\x2Fp><\x2Fdiv>'
+    +'<div class="rule-card"><h4>🌸 一种花开一朵<\x2Fh4><p>每种花只开一朵。学满当前花后自动开始种下一朵新花，逐朵解锁新品种。<\x2Fp><\x2Fdiv>'
+    +'<div class="rule-card"><h4>🔔 成长提醒<\x2Fh4><p>快要进入下一阶段或开花时，系统会弹出鼓励提醒，告诉你下一朵是什么花，为你加油。<\x2Fp><\x2Fdiv>'
+    +'<div class="rule-card"><h4>🪴 禅境花园<\x2Fh4><p>像植物大战僵尸的禅境花园一样，一盆盆花整齐排列，从种子萌发、长枝、结出花骨朵，最终绽放。点击任一花盆可放大查看那朵花。<\x2Fp><\x2Fdiv>');
+  var fl=$('help-flowers');
+  var h=totalHours();
+  var unlockedKeys={};
+  unlockedVarieties(h).forEach(function(k){ unlockedKeys[k]=1; });
+  // 一行 3 种，展示全部 28 种（已解锁彩色，未解锁灰暗+锁定）
+  var html='<div class="flower-grid">';
+  VAR_ORDER.forEach(function(k){
+    var v=VARIETIES[k];
+    var locked=!unlockedKeys[k];
+    html+='<div style="text-align:center;padding:8px 4px;border-radius:12px;background:'+(locked?'var(--bg2)':'#fff')+';border:1px solid '+(locked?'var(--line)':'var(--green-l)')+'">'
+      +'<div style="width:56px;height:66px;margin:0 auto;'+(locked?'opacity:.35;filter:grayscale(.7)':'')+'">'+zenFlowerSVG(k,2,56,66,1)+'<\x2Fdiv>'
+      +'<div style="font-size:12px;font-weight:600;margin-top:4px;color:'+(locked?'var(--ink3)':'var(--ink)')+'">'+v.name+(locked?' <span style="font-size:9px">🔒</span>':'')+'<\x2Fdiv>'
+      +'<div style="font-size:10px;color:'+(locked?'var(--ink3)':'var(--green-d)')+'">'+(locked?('累计 '+(VAR_ORDER.indexOf(k)+1)*16+'h 解锁'):'已解锁')+'<\x2Fdiv>'
+      +'<\x2Fdiv>';
+  });
+  html+='<\x2Fdiv>';
+  html+='<p style="font-size:11px;color:var(--ink3);margin-top:10px;text-align:center">共 '+VAR_ORDER.length+' 种花，随学习时长逐朵解锁 🌷</p>';
+  fl.innerHTML=sanitizeHtml(html);
+}
+
+/* 渲染入口暴露 */
+/* ==================== 渲染层：计划页（全年排期） ==================== */
+function renderPlan(){
+  var el=$('plan-list');
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var stages=plan.stages||[];
+  var weekly=plan.weekly_template||[];
+  var milestones=plan.milestones||[];
+  var t=todayStr();
+  var html='';
+
+  /* 双倒计时卡 */
+  var eks=(plan.exams&&plan.exams.length)?plan.exams:[{name:'国考（练兵）',date:'2026-11-29'},{name:'省考（决战）',date:'2027-03-20'}];
+  html+='<div class="kpis">';
+  eks.forEach(function(e,c){
+    var d=daysBetween(t,e.date);
+    html+='<div class="kpi '+(c===0?'c-gold':'c-rose')+'"><div class="v">'+Math.max(0,d)+'</div><div class="l">距'+esc(e.name)+'</div></div>';
+  });
+  // 本周是第几周（从 10/5 W1 起算）
+  var wk=Math.floor(daysBetween('2026-10-05',t)/7)+1;
+  html+='<div class="kpi c-green"><div class="v">'+(wk>0?('W'+wk):'—')+'</div><div class="l">当前周次</div></div>';
+  var stageNow=currentStage(stages,t);
+  html+='<div class="kpi c-red"><div class="v" style="font-size:15px;padding-top:4px">'+esc(stageNow?stageNow.name:'—')+'</div><div class="l">当前阶段</div></div>';
+  html+='</div>';
+
+  /* 数据诊断 */
+  html+='<div class="card"><h2><span class="dot"></span>数据诊断（2026-10-02 基线）</h2>';
+  (plan.diagnosis||[]).forEach(function(d){
+    var color=d.level==='good'?'var(--green-d)':d.level==='mid'?'var(--gold-d)':'var(--red)';
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px">'
+      +'<span style="width:4px;height:22px;border-radius:2px;background:'+color+';flex:none"></span>'
+      +'<span style="flex:1;font-weight:600">'+esc(d.mod)+'</span>'
+      +'<span style="color:'+color+';font-weight:800">'+d.acc+'%</span>'
+      +'<span style="color:var(--ink2);font-size:11px;max-width:46%">'+esc(d.note)+'</span>'
+      +'</div>';
+  });
+  html+='<div style="font-size:12px;color:var(--ink2);margin-top:8px;line-height:1.7">🎯 总目标：150分 = 行测75 + 申论75。行测不追求全面80%——判断稳85、言语75、资料80（三大件拉分），数量只保55%基础题、常识55%，政治理论冲65%。加权估算可达 74 分左右。</div></div>';
+
+  /* 学习日历（按日展示，点日期弹详情） */
+  var calY=state.calY||new Date().getFullYear();
+  var calM=state.calM||new Date().getMonth();  // 0-based
+  html+=renderPlanCalendar(calY,calM);
+
+  /* 每周节奏模板 */
+  html+='<div class="card"><h2><span class="dot"></span>每周节奏（在职版 · 带 buffer）</h2><div style="font-size:12px;color:var(--ink2);margin-bottom:8px">周合计约 6-7.5h。完成本周 80% 即达标，剩余顺延，不自责。</div>';
+  weekly.forEach(function(w){
+    var bg=w.type==='main'?'var(--green-l)':w.type==='buffer'?'var(--gold-l)':'#fff';
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;margin-bottom:5px;background:'+bg+';font-size:13px">'
+      +'<b style="width:34px;flex:none">'+esc(w.day)+'</b>'
+      +'<span style="flex:1;color:var(--ink2)">'+esc(w.plan)+'</span>'
+      +'<span style="color:var(--green-d);font-weight:700">'+esc(w.hours)+'</span>'
+      +'</div>';
+  });
+  html+='</div>';
+
+  /* 里程碑（自动追踪：✅达成 🟡接近 🔴差距，数据实时来自打卡/申论/花园） */
+  html+='<div class="card"><h2><span class="dot"></span>量化目标线（自动追踪）</h2>';
+  html+='<div style="font-size:12px;color:var(--ink2);margin-bottom:8px">右侧「实际」来自你的打卡/刷题/申论/花园数据，每次打开实时计算；达标自动变绿。</div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px">';
+  var curIdx=currentMilestoneIdx();
+  milestones.forEach(function(m,midx){
+    var items=milestoneProgress(m);
+    var allOk=items.length>0&&items.every(function(it){ return it.g.st==='ok'; });
+    var isCur=(midx===curIdx);
+    var border=allOk?'1.5px solid var(--green)':(isCur?'1.5px solid var(--gold)':'1px solid var(--line)');
+    var bg=allOk?'var(--green-l)':(isCur?'var(--gold-l)':'#fff');
+    html+='<div style="border:'+border+';border-radius:12px;padding:10px;font-size:12px;background:'+bg+'">'
+      +'<div style="font-weight:800;color:var(--rose-d);margin-bottom:4px">'+esc(m.date)
+      +(allOk?' <span style="color:var(--green-d)">🎉达成</span>':'')
+      +(isCur&&!allOk?' <span style="color:var(--gold-d)">← 当前目标</span>':'')
+      +'</div>';
+    items.forEach(function(it){
+      var color=it.g.st==='ok'?'var(--green-d)':(it.g.st==='near'?'var(--gold-d)':'var(--ink2)');
+      html+='<div style="display:flex;justify-content:space-between;line-height:1.9">'
+        +'<span>'+goalIcon(it.g.st)+' '+it.icon+' '+esc(it.label)+'目标 '+esc(it.text)+'</span>'
+        +'<span style="color:'+color+';font-weight:700">实际 '+goalLineText(it)+'</span></div>';
+    });
+    html+=(m.note?'<div style="color:var(--gold-d);font-weight:600;margin-top:3px">'+esc(m.note)+'</div>':'');
+    html+='</div>';
+  });
+  html+='</div>';
+  var et=plan.essay_target;
+  if(et){ html+='<div style="font-size:11px;color:var(--ink3);margin-top:8px;line-height:1.7">🎯 申论 '+esc(et.score)+'分路径：'+esc(et.path)+'</div>'; }
+  html+='</div>';
+
+  /* 复盘机制 */
+  html+='<div class="card"><h2><span class="dot"></span>复盘机制</h2><div class="rule-card"><h4>📅 周一 / 周三 / 周五</h4><p>复盘日：写本周笔记（学了啥/错误点），看计划偏差，AI 给动态调整建议。</p></div><div class="rule-card gold"><h4>📝 每次模考后</h4><p>输出失分清单（打卡记录+错题标签自动汇总）。</p></div><div class="rule-card rose"><h4>⚖️ 偏离时</h4><p>不硬追进度，砍次要保主线（申论+资料+政治理论）。</p></div>'
+    +'<button class="btn btn-pri btn-block" data-navreview="1" style="margin-top:10px">进入复盘中心</button></div>';
+
+  el.innerHTML=sanitizeHtml(html);
+}
+/* ==================== 学习日历（按日展示） ==================== */
+function renderPlanCalendar(y,m){
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var weekTopics=plan.week_topics||{};
+  var dailyTpl=plan.daily_template||{};
+  var t=todayStr();
+  var first=new Date(y,m,1);
+  var startWd=first.getDay();              // 0=周日
+  var dim=new Date(y,m+1,0).getDate();     // 当月天数
+  var monthNames=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  var wdNames=['日','一','二','三','四','五','六'];
+  var html='<div class="card"><h2><span class="dot"></span>学习日历</h2>';
+  // 月份切换头
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+    +'<button class="chip" data-calnav="-1">◀</button>'
+    +'<b style="font-size:15px">'+y+'年'+monthNames[m]+'</b>'
+    +'<button class="chip" data-calnav="1">▶</button>'
+    +'</div>';
+  // 星期头
+  html+='<div class="cal-grid" style="margin-bottom:4px">';
+  wdNames.forEach(function(w){ html+='<div style="text-align:center;font-size:11px;color:var(--ink3)">'+w+'</div>'; });
+  html+='</div>';
+  // 日期网格
+  html+='<div class="cal-grid">';
+  for(var b=0;b<startWd;b++){ html+='<div></div>'; }
+  for(var d=1;d<=dim;d++){
+    var ds=y+'-'+pad2(m+1)+'-'+pad2(d);
+    var wd=new Date(y,m,d).getDay();
+    var dt=dailyTpl[wd];
+    var wk=planWeekNum(ds);
+    var wt=(wk>0&&weekTopics[wk])?weekTopics[wk]:null;
+    var isToday=(ds===t);
+    var isFuture=(ds>t);
+    var inPlan=(ds>='2026-10-05'&&ds<='2027-03-19');
+    var isReview=(wd===1||wd===3||wd===5);
+    // 底色：今天=绿框；复盘日=金点；缓冲日(周五)=淡金；未来=淡
+    var bg='#fff';
+    if(dt&&dt.type==='buffer') bg='var(--gold-l)';
+    var border=isToday?'2px solid var(--green)':'1px solid var(--line)';
+    var opacity=inPlan?'1':'.45';
+    var hasAdj=(typeof activeAdjustment==='function'&&wk>0)?!!activeAdjustment(wk):false;
+    var dot='';
+    if(isReview&&inPlan) dot+='<span style="position:absolute;bottom:3px;left:44%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--gold)"></span>';
+    if(hasAdj) dot+='<span style="position:absolute;bottom:3px;left:58%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:#8B6FB8"></span>';
+    html+='<div class="cal-cell" data-calday="'+ds+'" style="position:relative;text-align:center;padding:6px 2px;border-radius:9px;background:'+bg+';border:'+border+';opacity:'+opacity+';cursor:'+(inPlan?'pointer':'default')+';min-height:44px" title="'+(wt?esc(wt.topic):'')+'">'
+      +'<div style="font-size:13px;font-weight:'+(isToday?'800':'600')+';color:'+(isToday?'var(--green-d)':(wd===0||wd===6?'var(--rose-d)':'var(--ink)'))+'">'+d+'</div>'
+      +(inPlan&&dt?'<div style="font-size:9px;color:var(--ink2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(dt.hours)+'</div>':'')
+      +dot
+      +'</div>';
+  }
+  html+='</div>';
+  // 图例
+  html+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:11px;color:var(--ink2)">'
+    +'<span>🟩 今天</span><span>🟡 周五buffer</span><span>🟡金点=复盘日</span><span>🟣紫点=有调整</span><span>点击日期看详情</span>'
+    +'</div>';
+  html+='<button class="btn btn-ghost btn-block btn-sm" data-adjmgr="1" style="margin-top:8px">📋 计划调整记录（查看/撤销/自己写）</button>';
+  html+='</div>';
+  return html;
+}
+function pad2(n){ return n<10?'0'+n:''+n; }
+/* 当日详情弹窗 */
+function openCalDayDetail(ds){
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var weekTopics=plan.week_topics||{};
+  var dailyTpl=plan.daily_template||{};
+  var wd=new Date(ds+'T00:00:00').getDay();
+  var dt=dailyTpl[wd];
+  var wk=planWeekNum(ds);
+  var wt=(wk>0&&weekTopics[wk])?weekTopics[wk]:null;
+  var dayNames=['周日','周一','周二','周三','周四','周五','周六'];
+  var body='';
+  var dObj=new Date(ds+'T00:00:00');
+  var isReview=(wd===1||wd===3||wd===5);
+  body+='<div style="font-size:12px;color:var(--ink3);margin-bottom:10px">'+esc(ds)+' · '+dayNames[wd]+(wk?(' · W'+wk):'')+(isReview?' · 📅 复盘日':'')+'</div>';
+  if(wt){
+    body+='<div style="background:var(--green-l);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+      +'<div style="font-size:13px;font-weight:700;color:var(--green-d)">📋 本周主题：'+esc(wt.topic)+'</div>'
+      +'<div style="font-size:12px;color:var(--ink2);margin-top:3px;line-height:1.7">'+esc(wt.detail)+'</div>'
+      +'</div>';
+  }
+  // 已确认调整（叠加显示）
+  var adj=(typeof activeAdjustment==='function')?activeAdjustment(wk):null;
+  if(adj){
+    body+='<div style="background:#F1EAF8;border-radius:10px;padding:10px 12px;margin-bottom:10px;border-left:3px solid #8B6FB8">'
+      +'<div style="font-size:13px;font-weight:700;color:#6B4FA0">📌 已确认调整（'+esc(adj.date)+'）</div>'
+      +'<div style="font-size:12px;color:#6B4FA0;margin-top:3px;line-height:1.8">';
+    adj.changes.forEach(function(c){ body+='· '+esc(c.text)+'<br>'; });
+    body+='</div><\x2Fdiv>';
+  }
+  if(dt){
+    var tag=dt.type==='main'?'<span class="tag">主力日</span>':dt.type==='buffer'?'<span class="tag o">缓冲日</span>':'<span class="tag g">轻量日</span>';
+    body+='<div style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px">'
+      +tag+'<span style="flex:1;font-size:13px;font-weight:600">'+esc(dt.plan)+'</span>'
+      +'<span style="color:var(--green-d);font-weight:700;font-size:13px">'+esc(dt.hours)+'</span></div>';
+    // 当日具体任务清单（按周主题细化）
+    if(wt){
+      body+='<div class="rule-card"><h4>✅ 建议清单</h4><p style="line-height:2">';
+      body+='· 完成上面主线内容<br>· 打卡记录（系统自动比对计划）<br>';
+      if(isReview) body+='· 📅 进入复盘中心写本周笔记<br>';
+      if(wt.topic.indexOf('申论')>=0) body+='· 写申论可传图给AI批改<br>';
+      if(wt.topic.indexOf('模考')>=0||wt.topic.indexOf('套卷')>=0) body+='· 限时整块完成，错题当日复盘<br>';
+      body+='</p></div>';
+    }
+  }
+  // 快捷操作
+  body+='<div style="display:flex;gap:8px;margin-top:6px">'
+    +'<button class="btn btn-pri" style="flex:1" data-nav="checkin" data-sf-close>去打卡</button>'
+    +(isReview?'<button class="btn btn-ghost" style="flex:1" data-navreview="1" data-sf-close>去复盘</button>':'')
+    +'</div>';
+  openFull(ds+' 学习安排',body);
+}
+
+/* 当前所处阶段 */
+function currentStage(stages,t){
+  var ranges=[[5,11,24],[11,30,12,27],[2027,1,4,2027,3,20]];
+  for(var i=0;i<stages.length;i++){
+    var s=stages[i];
+    var ws=(s.weeks&&s.weeks[0]&&s.weeks[0].date)||'';
+    var we=(s.weeks&&s.weeks[s.weeks.length-1]&&s.weeks[s.weeks.length-1].date)||'';
+    // 粗略按日期字符串判断（date 格式 "10/5-10/11"、"11/30-12/6"、"1月" 等），用周次法更稳
+  }
+  // 用周次法：W1 从 2026-10-05 开始
+  var wk=Math.floor(daysBetween('2026-10-05',t)/7)+1;
+  if(wk<=0) return stages[0];
+  if(wk<=8) return stages[0];
+  if(wk<=12) return stages[1];
+  return stages[2]||stages[stages.length-1];
+}
+/* 某周是否为当前周（date 形如 "10/5-10/11" 或 "1月"） */
+function isWeekActive(w,t){
+  var wk=Math.floor(daysBetween('2026-10-05',t)/7)+1;
+  var wn=parseInt(String(w.w||'').replace(/[^0-9]/g,''),10);
+  if(!isNaN(wn)&&wn>0) return wn===wk;
+  return false;
+}
+
+window.renderHome=renderHome; window.renderGarden=renderGarden;
+window.renderPlan=renderPlan; window.currentStage=currentStage; window.isWeekActive=isWeekActive;
+window.renderGardenHelp=renderGardenHelp; window.renderGardenMini=renderGardenMini;
+window.moduleStats=moduleStats; window.openPlot=openPlot;
+window.gardenPots=gardenPots; window.zenGardenSVG=zenGardenSVG;
+</script>

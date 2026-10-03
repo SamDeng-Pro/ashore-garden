@@ -1,0 +1,43 @@
+# ===== 密钥与本地配置（绝不上传）=====
+.env
+.env.*
+*.local
+config.local.json
+credentials*.json
+
+# ===== 数据文件（个人学习数据+大体积题库，不进仓库）=====
+knowledge_base/data/questions_full.json
+knowledge_base/data/questions_index.json
+knowledge_base/data/questions_seed.json
+knowledge_base/raw/
+knowledge_base/shenlun_ref/
+
+# ===== 构建产物（可由分片+脚本重新生成）=====
+garden_build/上岸花园v2.html
+garden_build/上岸花园.html
+garden_build/*.bak_*
+garden_build/part1_head.html
+garden_build/part2_body.html
+garden_build/part3_js_core.html
+garden_build/part4_js_render.html
+garden_build/part5_js_events.html
+
+# ===== 测试临时文件 =====
+/tmp/
+*.log
+.DS_Store
+Thumbs.db
+
+# ===== 编辑器 =====
+.vscode/
+.idea/
+
+# ===== WorkBuddy 本地数据（AI记忆/备份，不上传）=====
+.pw-browsers/
+.workbuddy/
+
+# ===== 开源补充（2026-10-03 审计）=====
+# 个人备考计划（含个人做题基线诊断）
+公考备考计划-*.md
+# 本机调试辅助文件（含 WorkBuddy 云端数据库ID）
+garden_build/schema.json

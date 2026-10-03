@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "title": "学习内容两级分类（打卡标签 + 统计维度）",
+    "updated_at": "2026-10-02",
+    "rule": "一级=行测5大模块+申论+时政；二级=各模块细分考点。打卡点选标签，统计按一级汇总、二级可下钻。"
+  },
+  "categories": [
+    {
+      "key": "zzll", "name": "政治理论", "color": "#6F9E4F",
+      "children": [
+        {"key": "zzll_sz", "name": "时政常识"},
+        {"key": "zzll_ml", "name": "马原/毛概"},
+        {"key": "zzll_zt", "name": "中国特色社会主义"},
+        {"key": "zzll_dd", "name": "党史党建"}
+      ]
+    },
+    {
+      "key": "cspd", "name": "常识判断", "color": "#8FB36A",
+      "children": [
+        {"key": "cspd_fl", "name": "法律常识"},
+        {"key": "cspd_kj", "name": "科技常识"},
+        {"key": "cspd_ls", "name": "历史人文"},
+        {"key": "cspd_jj", "name": "经济常识"},
+        {"key": "cspd_dl", "name": "地理国情"}
+      ]
+    },
+    {
+      "key": "yylj", "name": "言语理解", "color": "#E79BB5",
+      "children": [
+        {"key": "yylj_ljtk", "name": "逻辑填空"},
+        {"key": "yylj_pdy", "name": "片段阅读"},
+        {"key": "yylj_yjb", "name": "语句表达"},
+        {"key": "yylj_wzyd", "name": "篇章阅读"}
+      ]
+    },
+    {
+      "key": "pdtl", "name": "判断推理", "color": "#D9869B",
+      "children": [
+        {"key": "pdtl_txtl", "name": "图形推理"},
+        {"key": "pdtl_dytl", "name": "定义判断"},
+        {"key": "pdtl_lbtl", "name": "类比推理"},
+        {"key": "pdtl_ljpd", "name": "逻辑判断"},
+        {"key": "pdtl_px", "name": "排列组合/翻译推理"}
+      ]
+    },
+    {
+      "key": "slgx", "name": "数量关系", "color": "#E86A32",
+      "children": [
+        {"key": "slgx_sxys", "name": "数学运算"},
+        {"key": "slgx_sztl", "name": "数字推理"},
+        {"key": "slgx_gct", "name": "行程/工程问题"},
+        {"key": "slgx_nlw", "name": "年龄/利润问题"}
+      ]
+    },
+    {
+      "key": "zlfx", "name": "资料分析", "color": "#D4A94E",
+      "children": [
+        {"key": "zlfx_zzl", "name": "增长量/增长率"},
+        {"key": "zlfx_bf", "name": "比重/倍数"},
+        {"key": "zlfx_pj", "name": "平均数/平均增速"},
+        {"key": "zlfx_zh", "name": "综合推断"}
+      ]
+    },
+    {
+      "key": "sl", "name": "申论", "color": "#B98A2F",
+      "children": [
+        {"key": "sl_gk", "name": "概括归纳"},
+        {"key": "sl_fx", "name": "综合分析"},
+        {"key": "sl_gc", "name": "贯彻执行(公文)"},
+        {"key": "sl_dc", "name": "提出对策"},
+        {"key": "sl_dzw", "name": "大作文"}
+      ]
+    },
+    {
+      "key": "sz", "name": "时事政治", "color": "#7A9BB5",
+      "children": [
+        {"key": "sz_hy", "name": "重要会议/讲话"},
+        {"key": "sz_zc", "name": "政策文件"},
+        {"key": "sz_kj", "name": "科技航天"},
+        {"key": "sz_gj", "name": "国际外交"},
+        {"key": "sz_ms", "name": "民生社会"}
+      ]
+    }
+  ]
+}

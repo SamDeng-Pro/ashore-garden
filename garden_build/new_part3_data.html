@@ -1,0 +1,444 @@
+<script>
+/* ==================== 数据层 ==================== */
+(function(){
+  /* --- 常量 --- */
+  var DB_STUDY='rdimOnl0QK1DLsS2mCxRws';
+  var DB_TASK='gMErhxHviSeVT9J7zBr3rd';
+  var DB_CHECKIN='vE0AMDTwjp6ZYrgDMrgpPK';
+  var EXAM_SK='2027-03-20';   // 省考（决战）
+  var EXAM_GK='2026-11-29';   // 国考（练手）
+  var LS_KEY='wb_garden_';
+
+  /* --- 全局状态 --- */
+  var state={
+    route:'home',
+    study:[],task:[],checkin:[],
+    online:false,db:null,loaded:false,
+    quizCat:null,quizIdx:0,quizAnswered:false,quizSelected:null,
+    essayTab:'topic',
+    essayOpen:null,
+    affairsOpen:null,
+    affairCat:'全部',
+    photos:[],          // 手动打卡的照片（base64 预览）
+    checkinTab:'manual',
+    ckSelected:[],      // 已选学习内容标签（一级+二级 key）
+    ckWrongSelected:[], // 已选错题集中标签
+    ckWrongQty:{},      // 错题标签对应数量 {subKey:{total:总题数,wrong:错题数}}
+    calY:0,calM:0
+  };
+
+  /* --- SDK 探测 --- */
+  try{
+    if(window.__SMART_PAGE__ && window.__SMART_PAGE__.database){ state.db=window.__SMART_PAGE__.database; state.online=true; }
+  }catch(e){ state.online=false; }
+
+  /* --- 本地离线数据（兜底） --- */
+  function lsGet(k){ try{ return JSON.parse(localStorage.getItem(LS_KEY+k)||'null'); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(LS_KEY+k, JSON.stringify(v)); }catch(e){} }
+  function lsDel(k){ try{ localStorage.removeItem(LS_KEY+k); }catch(e){} }
+
+  /* 花园名：默认「上岸花园」，用户可在设置/向导里自定义（推荐「XX小花园」格式） */
+  function gardenName(){
+    var n=lsGet('garden_name');
+    return (n&&String(n).trim()) ? String(n).trim().slice(0,12) : '上岸花园';
+  }
+
+  /* --- DSDK008: 表单输入本地缓存（debounce 300ms） --- */
+  var _formTimer=null;
+  function cacheFormInput(formId,name,value){
+    if(_formTimer) clearTimeout(_formTimer);
+    _formTimer=setTimeout(function(){
+      try{
+        var d=lsGet('form_'+formId)||{};
+        if(value){ d[name]=value; } else { delete d[name]; }
+        lsSet('form_'+formId,d);
+      }catch(e){}
+    },300);
+  }
+  function clearFormCache(formId){ lsDel('form_'+formId); }
+  function restoreFormCache(formId,fn){ var d=lsGet('form_'+formId); if(d&&fn) fn(d); }
+
+  /* --- DSDK008 §7.1: 待提交图片 IndexedDB 缓存 --- */
+  function idbOpen(){
+    return new Promise(function(res){
+      try{
+        var req=indexedDB.open('wb_garden_photos',1);
+        req.onupgradeneeded=function(e){ e.target.result.createObjectStore('pending'); };
+        req.onsuccess=function(e){ res(e.target.result); };
+        req.onerror=function(){ res(null); };
+      }catch(e){ res(null); }
+    });
+  }
+  function idbPut(key,file){
+    return idbOpen().then(function(idb){
+      if(!idb||!file) return;
+      try{ idb.transaction('pending','readwrite').objectStore('pending').put(file,key); }catch(e){}
+    });
+  }
+  function idbDelete(key){
+    return idbOpen().then(function(idb){
+      if(!idb) return;
+      try{ idb.transaction('pending','readwrite').objectStore('pending').delete(key); }catch(e){}
+    });
+  }
+  function idbClearAll(){
+    return idbOpen().then(function(idb){
+      if(!idb) return;
+      try{ idb.transaction('pending','readwrite').objectStore('pending').clear(); }catch(e){}
+    });
+  }
+
+  /* --- select 选项 id 映射（三表共用） --- */
+  var OPT={
+    study_module:null, study_type:null,
+    task_module:null, task_status:null,
+    checkin_mood:null
+  };
+
+  /* --- 工具函数 --- */
+  function pad(n){ return n<10?'0'+n:''+n; }
+  function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  function daysBetween(a,b){ var x=new Date(a+'T00:00:00'),y=new Date(b+'T00:00:00'); return Math.round((y-x)/86400000); }
+  function optId(which,text){
+    var arr=OPT[which]; if(!arr) return '';
+    for(var i=0;i<arr.length;i++){ if(arr[i].text===text) return arr[i].id; }
+    return '';
+  }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function sanitizeHtml(s){ return s; } // 数据已由 esc 处理，此处占位
+  function num(v){ var n=parseFloat(v); return isNaN(n)?null:n; }
+
+  /* --- Toast --- */
+  var _toastTimer=null;
+  function toast(msg,keep){
+    var t=document.getElementById('toast');
+    t.textContent=msg; t.classList.add('show');
+    if(_toastTimer) clearTimeout(_toastTimer);
+    if(!keep){ _toastTimer=setTimeout(function(){ t.classList.remove('show'); },2400); }
+  }
+  window.toast=toast;
+
+  /* --- 加载 schema（option 映射） --- */
+  function loadSchemas(){
+    var p1 = new Promise(function(res){
+      if(!state.db){ res(); return; }
+      state.db.getSchema({databaseId:'rdimOnl0QK1DLsS2mCxRws'}).then(function(schema){
+        (schema.properties||[]).forEach(function(f){
+          if((f.type==='select'||f.type==='multi_select') && f.config && f.config.options){
+            if(f.name==='模块') OPT.study_module=f.config.options;
+            if(f.name==='类型') OPT.study_type=f.config.options;
+          }
+        });
+        res();
+      }).catch(function(){ res(); });
+    });
+    var p2 = new Promise(function(res){
+      if(!state.db){ res(); return; }
+      state.db.getSchema({databaseId:'gMErhxHviSeVT9J7zBr3rd'}).then(function(schema){
+        (schema.properties||[]).forEach(function(f){
+          if(f.type==='select' && f.config && f.config.options){
+            if(f.name==='模块') OPT.task_module=f.config.options;
+            if(f.name==='状态') OPT.task_status=f.config.options;
+          }
+        });
+        res();
+      }).catch(function(){ res(); });
+    });
+    var p3 = new Promise(function(res){
+      if(!state.db){ res(); return; }
+      state.db.getSchema({databaseId:'vE0AMDTwjp6ZYrgDMrgpPK'}).then(function(schema){
+        (schema.properties||[]).forEach(function(f){
+          if(f.type==='select' && f.config && f.config.options){
+            if(f.name==='心情') OPT.checkin_mood=f.config.options;
+          }
+        });
+        res();
+      }).catch(function(){ res(); });
+    });
+    return Promise.all([p1,p2,p3]);
+  }
+
+  /* --- 分页拉取全量数据（三表各一，databaseId 字面量内联） --- */
+  function queryStudy(startCursor,acc,guard){
+    acc=acc||[]; guard=guard||0;
+    if(!state.db) return Promise.resolve([]);
+    if(guard>100) return Promise.resolve(acc);
+    return state.db.query({databaseId:'rdimOnl0QK1DLsS2mCxRws',sorts:[{property:'日期',direction:'descending'}],pageSize:200,startCursor:startCursor})
+      .then(function(r){
+        acc=acc.concat(r.results||[]);
+        var next=r.nextCursor;
+        if(r.hasMore && next && next!==startCursor && (r.results||[]).length){ return queryStudy(next,acc,guard+1); }
+        return acc;
+      }).catch(function(){ return acc; });
+  }
+  function queryTask(startCursor,acc,guard){
+    acc=acc||[]; guard=guard||0;
+    if(!state.db) return Promise.resolve([]);
+    if(guard>100) return Promise.resolve(acc);
+    return state.db.query({databaseId:'gMErhxHviSeVT9J7zBr3rd',sorts:[{property:'日期',direction:'descending'}],pageSize:200,startCursor:startCursor})
+      .then(function(r){
+        acc=acc.concat(r.results||[]);
+        var next=r.nextCursor;
+        if(r.hasMore && next && next!==startCursor && (r.results||[]).length){ return queryTask(next,acc,guard+1); }
+        return acc;
+      }).catch(function(){ return acc; });
+  }
+  function queryCheckin(startCursor,acc,guard){
+    acc=acc||[]; guard=guard||0;
+    if(!state.db) return Promise.resolve([]);
+    if(guard>100) return Promise.resolve(acc);
+    return state.db.query({databaseId:'vE0AMDTwjp6ZYrgDMrgpPK',sorts:[{property:'日期',direction:'descending'}],pageSize:200,startCursor:startCursor})
+      .then(function(r){
+        acc=acc.concat(r.results||[]);
+        var next=r.nextCursor;
+        if(r.hasMore && next && next!==startCursor && (r.results||[]).length){ return queryCheckin(next,acc,guard+1); }
+        return acc;
+      }).catch(function(){ return acc; });
+  }
+  function loadStudy(){ return state.db?queryStudy():Promise.resolve(lsGet('study')||[]); }
+  function loadTask(){ return state.db?queryTask():Promise.resolve(lsGet('task')||[]); }
+  function loadCheckin(){ return state.db?queryCheckin():Promise.resolve(lsGet('checkin')||[]); }
+
+  /* --- 加载三表数据 --- */
+  function loadData(){
+    if(!state.db){
+      state.study=lsGet('study')||[]; state.task=lsGet('task')||[]; state.checkin=lsGet('checkin')||[];
+      state.loaded=true; return Promise.resolve();
+    }
+    return Promise.all([
+      loadStudy().then(function(r){ state.study=r; }),
+      loadTask().then(function(r){ state.task=r; }),
+      loadCheckin().then(function(r){ state.checkin=r; })
+    ]).then(function(){ state.loaded=true; }).catch(function(){ state.loaded=true; });
+  }
+
+  /* --- 记录新增（云端+离线降级） --- */
+  function addStudyRecord(props,local){ return addRecordTo('rdimOnl0QK1DLsS2mCxRws','study',props,local); }
+  function addTaskRecord(props,local){ return addRecordTo('gMErhxHviSeVT9J7zBr3rd','task',props,local); }
+  function addCheckinRecord(props,local){ return addRecordTo('vE0AMDTwjp6ZYrgDMrgpPK','checkin',props,local); }
+
+  function addRecordStudyDB(props){ return state.db.addRecord({databaseId:'rdimOnl0QK1DLsS2mCxRws',properties:props}); }
+  function addRecordTaskDB(props){ return state.db.addRecord({databaseId:'gMErhxHviSeVT9J7zBr3rd',properties:props}); }
+  function addRecordCheckinDB(props){ return state.db.addRecord({databaseId:'vE0AMDTwjp6ZYrgDMrgpPK',properties:props}); }
+
+  function addRecordTo(databaseId,key,props,local){
+    return new Promise(function(res){
+      if(state.online && state.db){
+        var run = databaseId==='rdimOnl0QK1DLsS2mCxRws'?addRecordStudyDB(props)
+                : databaseId==='gMErhxHviSeVT9J7zBr3rd'?addRecordTaskDB(props)
+                : addRecordCheckinDB(props);
+        run.then(function(){ res(true); }).catch(function(){ res(false); });
+      }else{ res(false); }
+    }).then(function(ok){
+      if(ok){ return true; }
+      // 离线降级：写 localStorage
+      var arr=lsGet(key)||[];
+      local.record_id='local_'+(+new Date());
+      arr.unshift(local); lsSet(key,arr);
+      state[key]=arr;
+      return false;
+    });
+  }
+
+  /* --- 图片上传 --- */
+  function uploadOne(file){
+    if(!state.db || !state.db.uploadImage) return Promise.resolve(null);
+    if(file.size>10*1024*1024) return Promise.resolve(null);
+    return new Promise(function(res,rej){
+      var r=new FileReader();
+      r.onload=function(){ res(String(r.result).split(',')[1]||''); };
+      r.onerror=function(){ res(null); };
+      r.readAsDataURL(file);
+    }).then(function(b64){
+      if(!b64) return null;
+      return state.db.uploadImage({data:b64,contentType:file.type,fileName:file.name}).then(function(r){
+        return (r&&r.url)?{title:file.name,imageUrl:r.url}:null;
+      }).catch(function(){ return null; });
+    });
+  }
+
+  /* ==================== 花卉品种定义（每花一朵，3阶段成长） ==================== */
+  /* 成长阶段：种子期(2h) → 萌芽期(4h) → 开花期(10h)，顺序累计，一朵花共 16h */
+  var STAGE_SEED=0, STAGE_SPROUT=1, STAGE_BLOOM=2;
+  var STAGE_HOURS=[2,4,10];     // 各阶段所需时长
+  var STAGES=['种子期','萌芽期','开花期'];
+  var FLOWER_TOTAL_HOURS=16;    // 一朵花完全开放所需总时长
+
+  /* 花品种（顺序即解锁顺序）：前 8 种是现有展示品种，后 20 种为备选（解锁到了才展示） */
+  var VARIETIES={
+    rose_red:   {type:'rose', name:'红玫瑰', color:'#C9504B', inner:'#A93A38', center:'#8C2E2C', petal:'#D9645E', stroke:'#A93A38', bloom:'热情 · 献给坚持'},
+    sun_classic:{type:'sun',  name:'向日葵', color:'#F5C542', inner:'#E8A83A', center:'#7A4A1E', petal:'#F5C542', stroke:'#D99A22', bloom:'向阳 · 献给希望'},
+    rose_pink:  {type:'rose', name:'粉玫瑰', color:'#E79BB5', inner:'#D97D9D', center:'#C26384', petal:'#F0B8CC', stroke:'#D97D9D', bloom:'温柔 · 献给耐心'},
+    sun_mini:   {type:'sun',  name:'迷你葵', color:'#F0B83C', inner:'#E0A22E', center:'#8A5A28', petal:'#F0B83C', stroke:'#D6981E', bloom:'灵动 · 献给积累'},
+    rose_white: {type:'rose', name:'白玫瑰', color:'#F3EBDD', inner:'#E8DCC4', center:'#D9C9A8', petal:'#F7F1E5', stroke:'#E0D3B8', bloom:'纯粹 · 献给初心'},
+    sun_teddy:  {type:'sun',  name:'泰迪葵', color:'#E89B3C', inner:'#D6852A', center:'#6E3E18', petal:'#E89B3C', stroke:'#C8791E', bloom:'温暖 · 献给成长'},
+    rose_gold:  {type:'rose', name:'香槟玫瑰',color:'#E7C88F', inner:'#D9B26E', center:'#C49A52', petal:'#F0D9A8', stroke:'#D9B26E', bloom:'荣耀 · 献给努力'},
+    sun_torch:  {type:'sun',  name:'火炬葵', color:'#E86A32', inner:'#D4551E', center:'#5E2E12', petal:'#E86A32', stroke:'#C04A18', bloom:'炽热 · 献给巅峰'},
+    /* --- 备选 20 种（解锁到了才展示） --- */
+    tulip_red:  {type:'rose', name:'红郁金香', color:'#E25A52', inner:'#C7443E', center:'#A83530', petal:'#EF6B63', stroke:'#C7443E', bloom:'热烈 · 献给勇气'},
+    tulip_pink: {type:'rose', name:'粉郁金香', color:'#F0A7BF', inner:'#E188A5', center:'#C96E8E', petal:'#F5BFD2', stroke:'#E188A5', bloom:'柔美 · 献给细腻'},
+    lily_white: {type:'rose', name:'白百合',   color:'#F4F1EA', inner:'#E9E2D2', center:'#D8CDB4', petal:'#FAF6EC', stroke:'#E4DCC6', bloom:'高洁 · 献给专注'},
+    lily_pink:  {type:'rose', name:'粉百合',   color:'#F2B8CB', inner:'#E29DB6', center:'#CD829D', petal:'#F6CCDA', stroke:'#E29DB6', bloom:'优雅 · 献给从容'},
+    peony_red:  {type:'rose', name:'红牡丹',   color:'#D94F56', inner:'#BC3D45', center:'#9E3038', petal:'#E7646B', stroke:'#BC3D45', bloom:'富贵 · 献给耕耘'},
+    peony_pink: {type:'rose', name:'粉牡丹',   color:'#F0A3B4', inner:'#E28A9E', center:'#CA7085', petal:'#F5B9C6', stroke:'#E28A9E', bloom:'娇艳 · 献给坚持'},
+    carn_red:   {type:'rose', name:'红康乃馨', color:'#E15B62', inner:'#C9444C', center:'#A9323A', petal:'#EC6E74', stroke:'#C9444C', bloom:'感恩 · 献给初心'},
+    carn_pink:  {type:'rose', name:'粉康乃馨', color:'#F2A9BC', inner:'#E48FA7', center:'#CC7590', petal:'#F6BDCC', stroke:'#E48FA7', bloom:'温柔 · 献给陪伴'},
+    dahlia_red: {type:'rose', name:'红大丽花', color:'#D84A42', inner:'#BC3832', center:'#9E2C26', petal:'#E65C54', stroke:'#BC3832', bloom:'大气 · 献给格局'},
+    dahlia_yel: {type:'sun',  name:'黄大丽花', color:'#F2C94C', inner:'#E0B03A', center:'#8A6A28', petal:'#F2C94C', stroke:'#D9A522', bloom:'灿烂 · 献给乐观'},
+    lotus_pink: {type:'rose', name:'粉荷花',   color:'#F2A8C0', inner:'#E48CA8', center:'#CB7092', petal:'#F7BDD0', stroke:'#E48CA8', bloom:'清雅 · 献给静心'},
+    lotus_white:{type:'rose', name:'白荷花',   color:'#F5F2EA', inner:'#EAE3D4', center:'#D8CEB6', petal:'#FBF7EF', stroke:'#E6DFCE', bloom:'出尘 · 献给淡泊'},
+    jasmine_w:  {type:'rose', name:'白茉莉',   color:'#F6F4EC', inner:'#ECE7DA', center:'#DBD2BE', petal:'#FCFAF2', stroke:'#E8E1D0', bloom:'清香 · 献给沉淀'},
+    cherry_pink:{type:'rose', name:'粉樱花',   color:'#F6C4D4', inner:'#EFA9BF', center:'#E08CA6', petal:'#FAD5E0', stroke:'#EFA9BF', bloom:'浪漫 · 献给热爱'},
+    orchid_purp:{type:'rose', name:'紫兰花',   color:'#B78BE0', inner:'#A271CC', center:'#8856B0', petal:'#C79DE8', stroke:'#A271CC', bloom:'典雅 · 献给智慧'},
+    iris_blue:  {type:'rose', name:'蓝鸢尾',   color:'#7A9BDB', inner:'#5F82C4', center:'#4767A8', petal:'#8EA9E4', stroke:'#5F82C4', bloom:'坚定 · 献给信念'},
+    marigold:   {type:'sun',  name:'万寿菊',   color:'#F2A93C', inner:'#E09428', center:'#7A5218', petal:'#F2A93C', stroke:'#D98A1E', bloom:'长寿 · 献给恒心'},
+    cosmos_pink:{type:'rose', name:'粉波斯菊', color:'#F0A6BE', inner:'#E28CA9', center:'#CA7092', petal:'#F6BAD0', stroke:'#E28CA9', bloom:'自由 · 献给洒脱'},
+    cosmos_ora: {type:'sun',  name:'橙波斯菊', color:'#F0A040', inner:'#DE8A2E', center:'#8A5A1E', petal:'#F0A040', stroke:'#D67E22', bloom:'活力 · 献给热情'},
+    violet_purp:{type:'rose', name:'紫罗兰',   color:'#A98BD8', inner:'#9274C0', center:'#7758A4', petal:'#B89FE2', stroke:'#9274C0', bloom:'谦逊 · 献给专注'}
+  };
+  var VAR_ORDER=['rose_red','sun_classic','rose_pink','sun_mini','rose_white','sun_teddy','rose_gold','sun_torch',
+    'tulip_red','tulip_pink','lily_white','lily_pink','peony_red','peony_pink','carn_red','carn_pink',
+    'dahlia_red','dahlia_yel','lotus_pink','lotus_white','jasmine_w','cherry_pink','orchid_purp','iris_blue',
+    'marigold','cosmos_pink','cosmos_ora','violet_purp'];
+
+  /* ==================== 花园成长计算（每花一朵，顺序推进） ==================== */
+  /* 累计学习时长（小时）：打卡表时长 + 做题记录折算（每题约0.5分钟） */
+  function totalHours(){
+    /* 只累计「真实打卡时长」：
+       - checkin 学习时长（真实打卡）
+       - study 有实际用时分钟的记录（手填/打卡带入）
+       - 历史基线（类型=历史基线）只有题量没有时长 → 不再按 0.5min/题 虚估 */
+    var h=0;
+    state.checkin.forEach(function(c){ h+=num(c['学习时长'])||0; });
+    state.study.forEach(function(s){
+      var mins=num(s['用时分钟'])||0;
+      if(mins>0){ h+=mins/60; }
+      // 基线记录（用时0、只有题量）不计入时长——题量只参与正确率统计
+    });
+    return h;
+  }
+
+  /* 核心：根据累计时长，计算每一朵花的成长状态。
+     返回数组，每项：{key, variety, name, type, color, stage(0种子/1萌芽/2开花), stageProgress(0~1), hoursLeft(还差多少h到下一阶段/开花), bloom}
+     只有「已开始成长」的花才出现在列表里（第0朵从0h就开始，第1朵从16h开始……）。 */
+  function flowerProgress(h){
+    h=(h==null)?totalHours():h;
+    var arr=[];
+    for(var i=0;i<VAR_ORDER.length;i++){
+      var k=VAR_ORDER[i];
+      var v=VARIETIES[k];
+      var start=i*FLOWER_TOTAL_HOURS;   // 第 i 朵花从 start 小时开始成长
+      if(h<=start) break;              // 还没轮到这朵
+      var local=h-start;               // 这朵花自己的累计时长（0~16）
+      var stage, stageProgress, hoursLeft, done=false;
+      if(local>=FLOWER_TOTAL_HOURS){
+        stage=STAGE_BLOOM; stageProgress=1; hoursLeft=0; done=true;  // 已开花
+      }else if(local>=STAGE_HOURS[0]+STAGE_HOURS[1]){
+        // 萌芽期已完成，正在开花期
+        stage=STAGE_BLOOM;
+        var remain=FLOWER_TOTAL_HOURS-local;
+        hoursLeft=remain;
+        stageProgress=Math.max(0,Math.min(1,(local-(STAGE_HOURS[0]+STAGE_HOURS[1]))/STAGE_HOURS[2]));
+      }else if(local>=STAGE_HOURS[0]){
+        // 种子期已完成，正在萌芽期
+        stage=STAGE_SPROUT;
+        hoursLeft=(STAGE_HOURS[0]+STAGE_HOURS[1])-local;
+        stageProgress=Math.max(0,Math.min(1,(local-STAGE_HOURS[0])/STAGE_HOURS[1]));
+      }else{
+        // 种子期进行中
+        stage=STAGE_SEED;
+        hoursLeft=STAGE_HOURS[0]-local;
+        stageProgress=Math.max(0,Math.min(1,local/STAGE_HOURS[0]));
+      }
+      arr.push({key:k, variety:k, name:v.name, type:v.type, color:v.color, petal:v.petal, inner:v.inner, center:v.center, stroke:v.stroke,
+                stage:stage, stageProgress:stageProgress, hoursLeft:Math.round(hoursLeft*10)/10, done:done, bloom:v.bloom, idx:i});
+    }
+    return arr;
+  }
+
+  /* 已完全开花的花朵数 */
+  function totalFlowers(){
+    var fp=flowerProgress();
+    var n=0;
+    fp.forEach(function(f){ if(f.done) n++; });
+    return n;
+  }
+
+  /* 已解锁（已开始成长）的品种列表 */
+  function unlockedVarieties(h){
+    return flowerProgress(h).map(function(f){ return f.key; });
+  }
+
+  /* 下一朵未开始的花（鼓励提示用）；全开完返回 null */
+  function nextUnlock(h){
+    h=(h==null)?totalHours():h;
+    var n=Math.floor(h/FLOWER_TOTAL_HOURS);  // 已完整开出的花数
+    if(n>=VAR_ORDER.length) return null;
+    return VARIETIES[VAR_ORDER[n]];          // 正在成长中的这一朵
+  }
+
+  /* 当前正在成长的那朵花（未完成的一朵） */
+  function currentGrowingFlower(h){
+    h=(h==null)?totalHours():h;
+    var fp=flowerProgress(h);
+    for(var i=0;i<fp.length;i++){ if(!fp[i].done) return fp[i]; }
+    return null;
+  }
+  /* 连续打卡天数 */
+  function streakDays(){
+    var days={};
+    state.checkin.forEach(function(c){ var d=String(c['日期']||'').slice(0,10); if(d) days[d]=1; });
+    var s=0, d=new Date();
+    var first=true; // 今天还没打卡时，允许从昨天起算（不断签）
+    while(true){
+      var key=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+      if(days[key]){ s++; d.setDate(d.getDate()-1); first=false; }
+      else if(first && key===todayStr()){ d.setDate(d.getDate()-1); first=false; }
+      else break;
+    }
+    return s;
+  }
+  function checkedToday(){
+    var t=todayStr();
+    return state.checkin.some(function(c){ return String(c['日期']||'').slice(0,10)===t; });
+  }
+
+  /* ==================== 今日学习统计（来自打卡/学习记录） ==================== */
+  function todayQuizStats(){
+    var t=todayStr(), q=0, w=0;
+    state.study.forEach(function(s){
+      if(String(s['日期']||'').slice(0,10)===t){ q+=num(s['题量'])||0; w+=num(s['错题数'])||0; }
+    });
+    return {q:q,w:w,acc:q>0?Math.round((q-w)/q*100):null};
+  }
+  function todaySunValue(){
+    // 阳光值 = 今日学习时长（小时）× 10（打卡是主要数据来源）
+    var t=todayStr(), h=0;
+    state.checkin.forEach(function(c){ if(String(c['日期']||'').slice(0,10)===t) h+=num(c['学习时长'])||0; });
+    if(h===0){
+      state.study.forEach(function(s){ if(String(s['日期']||'').slice(0,10)===t) h+=(num(s['用时分钟'])||0)/60; });
+    }
+    return Math.round(h*10);
+  }
+
+  /* 暴露到全局 */
+  window.DB_STUDY=DB_STUDY; window.DB_TASK=DB_TASK; window.DB_CHECKIN=DB_CHECKIN;
+  window.state=state;
+  window.VARIETIES=VARIETIES; window.VAR_ORDER=VAR_ORDER; window.STAGES=STAGES;
+  window.lsGet=lsGet; window.lsSet=lsSet; window.lsDel=lsDel; window.gardenName=gardenName;
+  window.cacheFormInput=cacheFormInput; window.clearFormCache=clearFormCache; window.restoreFormCache=restoreFormCache;
+  window.idbPut=idbPut; window.idbDelete=idbDelete; window.idbClearAll=idbClearAll;
+  window.optId=optId; window.num=num; window.esc=esc;
+  window.todayStr=todayStr; window.daysBetween=daysBetween; window.pad=pad; window.sanitizeHtml=sanitizeHtml;
+  window.totalHours=totalHours; window.totalFlowers=totalFlowers; window.unlockedVarieties=unlockedVarieties;
+  window.nextUnlock=nextUnlock; window.streakDays=streakDays; window.checkedToday=checkedToday;
+  window.flowerProgress=flowerProgress; window.currentGrowingFlower=currentGrowingFlower;
+  window.FLOWER_TOTAL_HOURS=FLOWER_TOTAL_HOURS; window.STAGE_HOURS=STAGE_HOURS;
+  window.STAGE_SEED=STAGE_SEED; window.STAGE_SPROUT=STAGE_SPROUT; window.STAGE_BLOOM=STAGE_BLOOM;
+  window.todayQuizStats=todayQuizStats; window.todaySunValue=todaySunValue;
+  window.addStudyRecord=addStudyRecord; window.addTaskRecord=addTaskRecord; window.addCheckinRecord=addCheckinRecord;
+  window.uploadOne=uploadOne;
+  window.loadData=loadData; window.loadSchemas=loadSchemas;
+  window.EXAM_SK=EXAM_SK; window.EXAM_GK=EXAM_GK;
+})();
+</script>

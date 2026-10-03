@@ -1,0 +1,1960 @@
+<script>
+/* ==================== 渲染层：时政页 ==================== */
+var AFFAIR_CATS=['重要会议/讲话','政策文件','科技航天','国际外交','民生社会'];
+var affairCollapsed={};   // 收起状态：{日期:true}（默认最新一天展开、其余收起）
+function renderAffairs(){
+  var el=$('affairs-list');
+  var filterEl=$('affairs-filter');
+  var items=window.KB_DATA.affairs.items||[];
+  if(items.length===0){
+    filterEl.innerHTML='';
+    el.innerHTML=sanitizeHtml('<div class="empty"><div class="ic">📰<\x2Fdiv>暂无时政数据，稍后自动更新<\x2Fdiv>');
+    return;
+  }
+  // 分类筛选栏
+  var cur=state.affairCat||'全部';
+  var fhtml='<div class="chip-row">';
+  fhtml+='<button class="chip'+(cur==='全部'?' on':'')+'" data-affaircat="全部">全部('+items.length+')<\x2Fbutton>';
+  AFFAIR_CATS.forEach(function(c){
+    var cnt=items.filter(function(x){return x.category===c;}).length;
+    if(cnt>0) fhtml+='<button class="chip'+(cur===c?' on':'')+'" data-affaircat="'+c+'">'+esc(c)+'('+cnt+')<\x2Fbutton>';
+  });
+  fhtml+='<\x2Fdiv>';
+  filterEl.innerHTML=sanitizeHtml(fhtml);
+
+  // 按分类过滤
+  var list = cur==='全部'?items:items.filter(function(x){return x.category===cur;});
+  var html='<div class="sec-title">时政要闻（权威媒体原文 · 每日更新 · 点日期展开/收起）<\x2Fdiv>';
+  // 按日期分组（倒序=最新在前）
+  var groups={};
+  list.forEach(function(it){ var d=it.date||''; if(!groups[d]) groups[d]=[]; groups[d].push(it); });
+  var dates=Object.keys(groups).sort().reverse();
+  dates.forEach(function(d,di){
+    var g=groups[d];
+    // 默认：最新一天展开，其他收起（用户点过的以点击状态为准）
+    if(!(d in affairCollapsed)) affairCollapsed[d]=(di!==0);
+    var collapsed=affairCollapsed[d];
+    html+='<div class="affair-date-head" data-affairdate="'+esc(d)+'">'
+      +'<span class="ad-arrow">'+(collapsed?'▶':'▼')+'<\x2Fspan>'
+      +'<span class="ad-text">'+esc(d)+'<\x2Fspan>'
+      +'<span class="ad-cnt">'+g.length+' 条<\x2Fspan>'
+      +'<\x2Fdiv>';
+    if(!collapsed){
+      g.forEach(function(it){
+        var realIdx=items.indexOf(it);
+        html+='<div class="essay-item" data-affairoopen="'+realIdx+'">'
+          +'<span class="tag">'+esc(it.category||'综合')+'<\x2Fspan><span class="tag g">'+esc(it.source_media||'')+'<\x2Fspan>'
+          +'<h3>'+esc(it.title||'')+'<\x2Fh3>'
+          +'<div style="font-size:12px;color:var(--ink2);line-height:1.6">'+esc(it.summary||'')+'<\x2Fdiv><\x2Fdiv>';
+      });
+    }
+  });
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* 时政详情全屏（原文 + 客观考点 + 深度解析） */
+function openAffair(idx){
+  var it=(window.KB_DATA.affairs.items||[])[idx];
+  if(!it) return;
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink2);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">'
+    +'<span class="tag">'+esc(it.category||'综合')+'<\x2Fspan>'
+    +'<span class="tag g">'+esc(it.source_media||'')+'<\x2Fspan>'
+    +'<span style="color:var(--ink3)">'+esc(it.date||'')+' · '+esc(it.page||'')+'<\x2Fspan><\x2Fdiv>';
+
+  // 深度解析（考点解读 + 申论角度 + 行测角度）
+  if(it.analysis && it.analysis.length){
+    body+='<div class="sec-title">🎯 考点深度解析<\x2Fdiv>';
+    it.analysis.forEach(function(a){
+      body+='<div class="rule-card rose" style="margin-bottom:12px">'
+        +'<h4>🏷️ '+esc(a['考点']||'')+'<\x2Fh4>'
+        +'<p style="line-height:1.8;margin-bottom:6px">'+esc(a['解读']||'')+'<\x2Fp>'
+        +'<div style="font-size:13px;color:var(--ink2);line-height:1.7">'
+        +'<div style="margin-bottom:3px"><b style="color:var(--rose-d)">申论角度：<\x2Fb>'+esc(a['申论角度']||'')+'<\x2Fdiv>'
+        +'<div><b style="color:var(--green-d)">行测角度：<\x2Fb>'+esc(a['行测角度']||'')+'<\x2Fdiv>'
+        +'<\x2Fdiv><\x2Fdiv>';
+    });
+  }
+
+  // 记忆要点（客观事实）
+  if(it.facts && it.facts.length){
+    body+='<div class="rule-card gold" style="margin-bottom:16px"><h4>📌 记忆要点（客观事实）<\x2Fh4>';
+    it.facts.forEach(function(f){ body+='<p style="margin-bottom:6px">· '+esc(f)+'<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  if(it.full_text){
+    body+='<div class="sec-title" style="margin-top:4px">📄 原文全文<\x2Fdiv>';
+    body+='<div class="article-body">'+esc(it.full_text)+'<\x2Fdiv>';
+  }
+  if(it.source_url){
+    body+='<div style="font-size:12px;color:var(--ink3);margin-top:18px;padding-top:12px;border-top:1px solid var(--line)">来源：<a href="'+esc(it.source_url)+'" target="_blank">查看原始出处<\x2Fa><\x2Fdiv>';
+  }
+  openFull(it.title||'时政详情',body);
+}
+
+/* ==================== 渲染层：申论页 ==================== */
+function renderEssay(){
+  renderEssayTabs();
+  renderEssayList();
+}
+function renderEssayTabs(){
+  var el=$('essay-tabs');
+  var tabs=[
+    {k:'topic',n:'真题主题'},
+    {k:'material',n:'素材库'},
+    {k:'practice',n:'我的申论'},
+    {k:'tools',n:'写作工具'}
+  ];
+  var html='';
+  tabs.forEach(function(t){
+    html+='<button class="btn btn-sm '+(state.essayTab===t.k?'btn-pri':'btn-ghost')+'" data-essaytab="'+t.k+'">'+t.n+'<\x2Fbutton>';
+  });
+  el.innerHTML=sanitizeHtml(html);
+}
+function renderEssayList(){
+  var el=$('essay-list');
+  var d=window.KB_DATA.essay||{};
+  var html='';
+  if(state.essayTab==='topic'){
+    html+='<div class="sec-title">国考/省考近年真题主题（含详细解析 + 示范范文）<\x2Fdiv>';
+    (d.real_topics||[]).forEach(function(t,idx){
+      html+='<div class="essay-item" data-essayopen="'+idx+'">'
+        +'<span class="tag">'+esc(t.year)+'<\x2Fspan><span class="tag g">'+esc(t.paper||'')+'<\x2Fspan>'
+        +(t.sample_essay?'<span class="tag o">含范文<\x2Fspan>':'')
+        +'<h3>'+esc(t.theme||'')+'<\x2Fh3>'
+        +'<div style="font-size:12px;color:var(--ink2)">'+esc(t.domain||'')+' · '+esc(t.question_types||'')+'<\x2Fdiv><\x2Fdiv>';
+    });
+  }else if(state.essayTab==='material'){
+    html+='<div class="sec-title">申论写作素材（人民日报/求是权威评论）<\x2Fdiv>';
+    (d.materials||[]).forEach(function(m,idx){
+      html+='<div class="essay-item" data-essaymat="'+idx+'">'
+        +'<span class="tag o">'+esc(m.type||'')+'<\x2Fspan><span class="tag g">'+esc(m.date||'')+'<\x2Fspan>'
+        +'<h3>'+esc(m.title||'')+'<\x2Fh3>'
+        +'<div style="font-size:12px;color:var(--ink2)">'+esc(m.source_media||'')+'<\x2Fdiv><\x2Fdiv>';
+    });
+  }else if(state.essayTab==='practice'){
+    renderEssayPractice(el);
+    return;
+  }else if(state.essayTab==='tools'){
+    renderEssayTools(el);
+    return;
+  }
+  if(!html){ html='<div class="empty">暂无数据<\x2Fdiv>'; }
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* 申论真题详情全屏（含详细解析 + 示范范文深度剖析） */
+function openEssayTopic(idx){
+  var d=window.KB_DATA.essay||{};
+  var t=(d.real_topics||[])[idx];
+  if(!t) return;
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink2);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px">'
+    +'<span class="tag">'+esc(t.year)+'<\x2Fspan><span class="tag g">'+esc(t.paper||'')+'<\x2Fspan>'
+    +'<span class="tag o">'+esc(t.domain||'')+'<\x2Fspan><\x2Fdiv>';
+  body+='<div style="font-size:18px;font-weight:700;margin-bottom:16px;line-height:1.6">'+esc(t.theme||'')+'<\x2Fdiv>';
+  body+='<div class="rule-card"><h4>📚 题型组合<\x2Fh4><p>'+esc(t.question_types||'')+'<\x2Fp><\x2Fdiv>';
+  body+='<div class="rule-card gold"><h4>🎯 关键题<\x2Fh4><p>'+esc(t.key_question||'')+'<\x2Fp><\x2Fdiv>';
+  body+='<div class="rule-card rose"><h4>📖 详细解析<\x2Fh4><p style="line-height:1.9">'+esc(t.analysis||'')+'<\x2Fp><\x2Fdiv>';
+  if(t.keywords && t.keywords.length){
+    body+='<div class="rule-card"><h4>🏷️ 关键词<\x2Fh4><p>'+esc(t.keywords.join('、'))+'<\x2Fp><\x2Fdiv>';
+  }
+  // 示范范文 + 深度剖析
+  if(t.sample_essay){
+    var se=t.sample_essay;
+    body+='<div class="sec-title" style="margin-top:8px">📝 示范范文 + 深度剖析<\x2Fdiv>';
+    body+='<div style="font-size:12px;color:var(--rose-d);margin-bottom:10px">'+esc(se.title||'')+' · 学习参考（非官方答案）<\x2Fdiv>';
+    if(se.full_text){
+      body+='<div class="article-body" style="background:var(--bg2);padding:16px;border-radius:10px">'+esc(se.full_text)+'<\x2Fdiv>';
+    }
+    if(se.structure){ body+='<div class="rule-card" style="margin-top:12px"><h4>🏗️ 结构拆解<\x2Fh4><p style="line-height:1.8">'+esc(se.structure)+'<\x2Fp><\x2Fdiv>'; }
+    if(se.points && se.points.length){
+      body+='<div class="rule-card"><h4>📌 分论点提炼<\x2Fh4>';
+      se.points.forEach(function(p){ body+='<p style="margin-bottom:4px;line-height:1.7">· '+esc(p)+'<\x2Fp>'; });
+      body+='<\x2Fdiv>';
+    }
+    if(se.golden_sentences && se.golden_sentences.length){
+      body+='<div class="rule-card gold"><h4>✨ 金句摘录<\x2Fh4>';
+      se.golden_sentences.forEach(function(s){ body+='<p style="margin-bottom:6px;color:var(--gold-d)">「'+esc(s)+'」<\x2Fp>'; });
+      body+='<\x2Fdiv>';
+    }
+    if(se.usage){ body+='<div class="rule-card rose"><h4>✍️ 可借鉴 / 划重点<\x2Fh4><p style="line-height:1.9">'+esc(se.usage)+'<\x2Fp><\x2Fdiv>'; }
+  }
+  if(t.source_media){ body+='<div style="font-size:12px;color:var(--ink3);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">来源：'+esc(t.source_media)+'<\x2Fdiv>'; }
+  openFull(t.theme||'申论真题',body);
+}
+
+/* 申论素材详情全屏（含原文+结构+金句+可借鉴，支持金句库/真题解析/规范表达三类扩展） */
+function openEssayMat(idx){
+  var d=window.KB_DATA.essay||{};
+  var m=(d.materials||[])[idx];
+  if(!m) return;
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink2);margin-bottom:14px;display:flex;flex-wrap:wrap;gap:6px">'
+    +'<span class="tag o">'+esc(m.type||'')+'<\x2Fspan><span class="tag g">'+esc(m.date||'')+'<\x2Fspan>'
+    +'<span style="color:var(--ink3)">'+esc(m.source_media||'')+'<\x2Fspan><\x2Fdiv>';
+  if(m.gist){ body+='<div style="font-size:15px;color:var(--ink2);line-height:1.8;margin-bottom:16px">'+esc(m.gist)+'<\x2Fdiv>'; }
+
+  // 金句素材库扩展：分主题展示金句/案例/分论点
+  if(m._themes && m._themes.length){
+    m._themes.forEach(function(th){
+      body+='<div class="rule-card" style="margin-bottom:14px"><h4>'+esc(th.theme)+'<\x2Fh4>';
+      if(th.quotes && th.quotes.length){
+        body+='<div style="font-size:12px;color:var(--gold-d);font-weight:700;margin:6px 0 3px">✦ 金句<\x2Fdiv>';
+        th.quotes.slice(0,8).forEach(function(q){ body+='<p style="margin-bottom:4px;line-height:1.7">'+esc(q)+'<\x2Fp>'; });
+      }
+      if(th.points && th.points.length){
+        body+='<div style="font-size:12px;color:var(--green-d);font-weight:700;margin:8px 0 3px">✦ 分论点模板<\x2Fdiv>';
+        th.points.forEach(function(p){ body+='<p style="margin-bottom:3px;line-height:1.7">· '+esc(p)+'<\x2Fp>'; });
+      }
+      if(th.cases && th.cases.length){
+        body+='<div style="font-size:12px;color:var(--rose-d);font-weight:700;margin:8px 0 3px">✦ 案例<\x2Fdiv>';
+        th.cases.slice(0,5).forEach(function(c){ body+='<p style="margin-bottom:3px;line-height:1.7">· '+esc(c.name)+(c.desc?('：'+esc(c.desc)):'')+'<\x2Fp>'; });
+      }
+      body+='<\x2Fdiv>';
+    });
+  }
+
+  // 真题解析扩展：展示题目+材料+六步解析
+  if(m._question || m._analysis){
+    if(m._question){ body+='<div class="rule-card"><h4>🎯 题目<\x2Fh4><p style="line-height:1.8">'+esc(m._question)+'<\x2Fp><\x2Fdiv>'; }
+    if(m.full_text && m.full_text.length>2 && m.full_text!=='（原文要点）'){
+      body+='<div class="rule-card"><h4>📄 材料<\x2Fh4><div style="font-size:14px;line-height:1.9;color:var(--ink2)">'+esc(m.full_text)+'<\x2Fdiv><\x2Fdiv>';
+    }
+    if(m._analysis){ body+='<div class="rule-card rose"><h4>📖 六步解析<\x2Fh4><div class="article-body" style="font-size:15px">'+esc(m._analysis)+'<\x2Fdiv><\x2Fdiv>'; }
+  }else{
+    // 普通素材：原文/结构/论点/金句/可借鉴
+    if(m.full_text && m.full_text.length>2){
+      body+='<div class="sec-title">📄 原文<\x2Fdiv>';
+      body+='<div class="article-body">'+esc(m.full_text)+'<\x2Fdiv>';
+    }
+    if(m.structure){ body+='<div class="rule-card"><h4>🏗️ 结构分析<\x2Fh4><p>'+esc(m.structure)+'<\x2Fp><\x2Fdiv>'; }
+    if(m.points && m.points.length){
+      body+='<div class="rule-card"><h4>📌 论点 / 表达<\x2Fh4>';
+      m.points.forEach(function(p){ body+='<p style="margin-bottom:4px;line-height:1.7">· '+esc(p)+'<\x2Fp>'; });
+      body+='<\x2Fdiv>';
+    }
+    if(m.golden_sentences && m.golden_sentences.length){
+      body+='<div class="rule-card gold"><h4>✨ 金句摘录<\x2Fh4>';
+      m.golden_sentences.forEach(function(s){ body+='<p style="margin-bottom:6px;color:var(--gold-d)">「'+esc(s)+'」<\x2Fp>'; });
+      body+='<\x2Fdiv>';
+    }
+    if(m.usage){ body+='<div class="rule-card rose"><h4>✍️ 可借鉴 / 划重点<\x2Fh4><p style="line-height:1.9">'+esc(m.usage)+'<\x2Fp><\x2Fdiv>'; }
+  }
+  if(m.source_url){ body+='<div style="font-size:12px;color:var(--ink3);margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">来源：<a href="'+esc(m.source_url)+'" target="_blank">查看出处<\x2Fa><\x2Fdiv>'; }
+  openFull(m.title||'申论素材',body);
+}
+
+/* ==================== GLM AI 模块（识别 + 批改） ==================== */
+/* key 只存用户浏览器 localStorage，不写入页面源码 */
+var AI_DEFAULT={base:'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions',model:'glm-5.3-flash'};
+function getAICfg(){
+  var c=lsGet('ai_cfg')||{};
+  return {base:(c.base||AI_DEFAULT.base),model:(c.model||AI_DEFAULT.model)};
+}
+function aiKey(){ return lsGet('glm_api_key')||''; }
+function aiReady(){ return !!aiKey(); }
+/* 设置中心（聚合入口） */
+function openSettingsHub(){
+  var aiOn=aiReady(), ntOn=notifyReady();
+  var gname=(typeof gardenName==='function')?gardenName():'上岸花园';
+  var body='';
+  body+='<h3 style="margin-bottom:10px">⚙️ 设置</h3>';
+  body+='<div data-set="gname" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+    +'<span>🌷 花园名称</span><span style="font-size:12px;color:var(--ink3)">'+esc(gname)+' ›</span></div>';
+  body+='<div data-set="ai" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+    +'<span>🤖 AI 接口（识别/批改/偏差分析）</span><span style="font-size:12px;color:'+(aiOn?'var(--green-d)':'var(--gold-d)')+';font-weight:600">'+(aiOn?'已配置 ›':'未配置 ›')+'</span></div>';
+  body+='<div data-set="notify" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+    +'<span>🔔 微信偏离提醒</span><span style="font-size:12px;color:'+(ntOn?'var(--green-d)':'var(--ink3)')+';font-weight:600">'+(ntOn?'已开启 ›':'未开启 ›')+'</span></div>';
+  body+='<div data-set="backfill" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+    +'<span>📥 历史数据补录</span><span style="font-size:12px;color:var(--ink3)">之前的刷题/申论分数 ›</span></div>';
+  body+='<div data-set="wizard" style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+    +'<span>🧭 新手引导（目标考试 / AI配置）</span><span style="font-size:12px;color:'+(wizardDone()?'var(--ink3)':'var(--gold-d)')+';font-weight:600">'+(wizardDone()?'重新运行 ›':'未完成 ›')+'</span></div>';
+  body+='<p style="font-size:11px;color:var(--ink3);line-height:1.7">所有 Key 只存你当前浏览器的本地存储，不上传任何服务器。</p>';
+  openSheet(body);
+  document.querySelectorAll('[data-set]').forEach(function(n){
+    n.addEventListener('click',function(){
+      var k=n.getAttribute('data-set');
+      if(k==='gname') openGardenNameSettings();
+      else if(k==='ai') openAISettings();
+      else if(k==='notify') openNotifySettings();
+      else if(k==='backfill') openBackfill();
+      else if(k==='wizard'){
+        // 重新运行向导：清掉步骤记录和今日跳过，从第一步开始
+        lsDel('wizard_step');
+        var sn=lsGet('wizard_snooze');
+        if(sn && sn.date===todayStr()){ sn.date=''; lsSet('wizard_snooze',sn); }
+        closeSheet();
+        openWizard();
+      }
+    });
+  });
+}
+
+/* 花园名设置（自定义时推荐「XX小花园」格式） */
+function openGardenNameSettings(){
+  var cur=(typeof gardenName==='function')?gardenName():'上岸花园';
+  openSheet('<h3 style="margin-bottom:6px">🌷 花园名称</h3>'
+    +'<p style="font-size:12px;color:var(--ink2);margin-bottom:12px;line-height:1.7">给它起个你喜欢的名字吧（最多12字）。推荐格式：<b>你的名字+小花园</b>，比如「倩倩小花园」。</p>'
+    +'<div class="field"><label>花园名称</label>'
+    +'<input class="input" id="gn-input" type="text" maxlength="12" placeholder="如：倩倩小花园" value="'+(cur==='上岸花园'?'':esc(cur))+'"></div>'
+    +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'
+    +'<button class="chip" data-gn-suggest="倩倩小花园">倩倩小花园</button>'
+    +'<button class="chip" data-gn-suggest="上岸小花园">上岸小花园</button>'
+    +'<button class="chip" data-gn-suggest="幸运小花园">幸运小花园</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-pri" style="flex:1" id="gn-save">保存</button>'
+    +(cur!=='上岸花园'?'<button class="btn btn-ghost" id="gn-reset">恢复默认</button>':'')
+    +'<button class="btn btn-ghost" data-sf-close>取消</button></div>');
+  document.querySelectorAll('[data-gn-suggest]').forEach(function(b){
+    b.addEventListener('click',function(){ $('gn-input').value=b.getAttribute('data-gn-suggest'); });
+  });
+  $('gn-save').addEventListener('click',function(){
+    var v=$('gn-input').value.trim();
+    if(!v){ toast('写个名字，或点恢复默认'); return; }
+    lsSet('garden_name', v.slice(0,12));
+    closeSheet(); toast('🌷 已改名：'+v.slice(0,12));
+    if(typeof applyGardenName==='function') applyGardenName();
+    renderAll();
+  });
+  var rb=$('gn-reset');
+  if(rb) rb.addEventListener('click',function(){
+    lsDel('garden_name'); closeSheet(); toast('已恢复默认：上岸花园');
+    if(typeof applyGardenName==='function') applyGardenName();
+    renderAll();
+  });
+}
+
+/* ==================== 历史数据补录（老用户首次使用） ==================== */
+/* 严格数字校验：空/非数字/超范围都报错，返回 {ok,v,msg}；allowEmpty 时不填视为跳过 */
+function strictNum(v,opt){
+  opt=opt||{};
+  var s=String(v==null?'':v).trim();
+  if(s===''){
+    if(opt.allowEmpty) return {ok:true,v:null};
+    return {ok:false,msg:'这里不能空着哦，要填数字'};
+  }
+  // 拒绝"12abc"、"1.2.3"、全角数字也统一转半角再验
+  var half=s.replace(/[０-９]/g,function(c){ return String.fromCharCode(c.charCodeAt(0)-0xFEE0); }).replace('．','.');
+  if(!/^\d+(\.\d+)?$/.test(half)){
+    return {ok:false,msg:'「'+s.slice(0,10)+'」不是有效数字，请只填数字'};
+  }
+  var n=parseFloat(half);
+  if(isNaN(n)) return {ok:false,msg:'「'+s.slice(0,10)+'」无法识别为数字'};
+  if(opt.min!=null && n<opt.min) return {ok:false,msg:'不能小于 '+opt.min};
+  if(opt.max!=null && n>opt.max) return {ok:false,msg:'不能大于 '+opt.max};
+  if(opt.integer && Math.floor(n)!==n) return {ok:false,msg:'题量要填整数'};
+  return {ok:true,v:n};
+}
+/* 补录主面板 */
+function openBackfill(){
+  var cats=getAllCategories();
+  var modOpts=cats.map(function(c){ return '<option>'+esc(c.name)+'</option>'; }).join('');
+  var MOD_COLORS={'政治理论':'#6F9E4F','常识判断':'#8FB36A','言语理解':'#E79BB5','判断推理':'#D9869B','数量关系':'#E86A32','资料分析':'#D4A94E','申论':'#B98A2F','时事政治':'#7A9BB5'};
+  var colOpts='';
+  for(var mk in MOD_COLORS){ colOpts+='<option>'+esc(mk)+'</option>'; }
+  var body='';
+  body+='<h3 style="margin-bottom:6px">📥 历史数据补录</h3>';
+  body+='<p style="font-size:12px;color:var(--ink2);line-height:1.7;margin-bottom:12px">开始用花园之前刷过的题、写过的申论，都可以补录进来。数据会参与正确率统计和目标追踪，让诊断更准。<b>只填数字</b>，留空的项会跳过。</p>';
+  body+='<div id="bf-err" style="display:none;background:var(--rose-l);color:var(--rose-d);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600;margin-bottom:10px"></div>';
+
+  /* —— 客观题部分 —— */
+  body+='<div class="rule-card" style="margin-bottom:12px"><h4>📒 之前刷过的题（可选，按模块累计）</h4>';
+  body+='<div id="bf-mod-rows"></div>';
+  body+='<button class="btn btn-ghost btn-sm" id="bf-add-mod" style="margin-top:6px">＋ 再加一个模块</button>';
+  body+='<div style="font-size:11px;color:var(--ink3);margin-top:8px;line-height:1.6">填「累计做了多少题」和「做对了多少题」，不用填日期。数学自动校验：做对数不能大于总题量。</div></div>';
+
+  /* —— 申论部分 —— */
+  body+='<div class="rule-card" style="margin-bottom:12px"><h4>📝 之前的申论（可选）</h4>';
+  body+='<div class="form-grid">';
+  body+='<div class="field"><label>累计写了几篇（整数）</label><input class="input" id="bf-sl-count" type="text" inputmode="numeric" placeholder="如 5"></div>';
+  body+='<div class="field"><label>最近一次得分（0-100）</label><input class="input" id="bf-sl-score" type="text" inputmode="decimal" placeholder="如 62"></div>';
+  body+='</div>';
+  body+='<div class="field"><label>最近一次题型（选填）</label><select class="select" id="bf-sl-type"><option>概括归纳</option><option>综合分析</option><option>提出对策</option><option>应用文写作</option><option>大作文（议论文）</option></select></div>';
+  body+='<div style="font-size:11px;color:var(--ink3);line-height:1.6">补录的篇数会计入「申论目标追踪」。分数只做记录，AI 批改从新写的练笔开始。</div></div>';
+
+  /* —— 模考分数 —— */
+  body+='<div class="rule-card" style="margin-bottom:14px"><h4>🎯 参加过的模考（可选）</h4>';
+  body+='<div id="bf-mock-rows"></div>';
+  body+='<button class="btn btn-ghost btn-sm" id="bf-add-mock" style="margin-top:6px">＋ 再加一次模考</button></div>';
+
+  body+='<button class="btn btn-pri btn-block" id="bf-save">确认补录</button>';
+  body+='<button class="btn btn-ghost btn-block" style="margin-top:8px" data-sf-close>取消</button>';
+  openSheet(body);
+
+  var bfErr=function(msg){
+    var el=$('bf-err');
+    if(msg){ el.textContent='⚠️ '+msg; el.style.display='block'; el.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+    else{ el.style.display='none'; }
+  };
+
+  /* —— 动态模块行 —— */
+  function addModRow(){
+    var wrap=$('bf-mod-rows');
+    var idx=wrap.querySelectorAll('.bf-mod-row').length;
+    var row=document.createElement('div');
+    row.className='bf-mod-row';
+    row.style.cssText='display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px';
+    row.innerHTML='<select class="select" data-bf="mod" style="flex:1;min-width:110px;padding:8px 30px 8px 10px;font-size:13px">'+colOpts+'</select>'
+      +'<input class="input" data-bf="total" type="text" inputmode="numeric" placeholder="总题量" style="width:86px;padding:8px;font-size:13px">'
+      +'<input class="input" data-bf="right" type="text" inputmode="numeric" placeholder="做对" style="width:74px;padding:8px;font-size:13px">'
+      +(idx>0?'<button class="tag-btn" data-bf-del="1" style="flex:none;color:var(--red)">✕</button>':'');
+    wrap.appendChild(row);
+  }
+  addModRow();   // 默认一行
+  $('bf-add-mod').addEventListener('click',addModRow);
+  $('bf-mod-rows').addEventListener('click',function(e){
+    var d=e.target.closest('[data-bf-del]');
+    if(d){ var r=d.closest('.bf-mod-row'); r.parentNode.removeChild(r); }
+  });
+
+  /* —— 动态模考行 —— */
+  function addMockRow(){
+    var wrap=$('bf-mock-rows');
+    var idx=wrap.querySelectorAll('.bf-mock-row').length;
+    var row=document.createElement('div');
+    row.className='bf-mock-row';
+    row.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap';
+    row.innerHTML='<input class="input" data-bf="mdate" type="text" placeholder="日期 如 2026-08-15" style="flex:1.2;min-width:130px;padding:8px;font-size:13px">'
+      +'<select class="select" data-bf="mscope" style="flex:none;width:92px;padding:8px 26px 8px 10px;font-size:13px"><option>行测</option><option>申论</option><option>整套卷</option></select>'
+      +'<input class="input" data-bf="mscore" type="text" inputmode="decimal" placeholder="得分" style="width:70px;padding:8px;font-size:13px">'
+      +'<input class="input" data-bf="mfull" type="text" inputmode="decimal" placeholder="满分" style="width:70px;padding:8px;font-size:13px">'
+      +(idx>0?'<button class="tag-btn" data-bf-del="1" style="flex:none;color:var(--red)">✕</button>':'');
+    wrap.appendChild(row);
+  }
+  addMockRow();
+  $('bf-add-mock').addEventListener('click',addMockRow);
+  $('bf-mock-rows').addEventListener('click',function(e){
+    var d=e.target.closest('[data-bf-del]');
+    if(d){ var r=d.closest('.bf-mock-row'); r.parentNode.removeChild(r); }
+  });
+
+  /* —— 提交（全部校验通过才写入） —— */
+  $('bf-save').addEventListener('click',function(){
+    bfErr('');
+    /* 1. 客观题行校验 */
+    var modRows=[].slice.call(document.querySelectorAll('.bf-mod-row'));
+    var mods=[];
+    for(var i=0;i<modRows.length;i++){
+      var row=modRows[i];
+      var m=row.querySelector('[data-bf="mod"]').value;
+      var tS=row.querySelector('[data-bf="total"]').value;
+      var rS=row.querySelector('[data-bf="right"]').value;
+      if(tS.trim()==='' && rS.trim()===''){ continue; }   // 整行留空=跳过
+      if(tS.trim()==='' || rS.trim()===''){ bfErr('「'+m+'」的总题量和做对数要一起填（或都留空跳过）'); return; }
+      var t=strictNum(tS,{integer:true,min:0,max:100000});
+      if(!t.ok){ bfErr('「'+m+'」总题量：'+t.msg); return; }
+      var r=strictNum(rS,{integer:true,min:0,max:100000});
+      if(!r.ok){ bfErr('「'+m+'」做对数：'+r.msg); return; }
+      if(r.v>t.v){ bfErr('「'+m+'」做对数（'+r.v+'）不能大于总题量（'+t.v+'）'); return; }
+      mods.push({mod:m,t:t.v,r:r.v});
+    }
+    /* 2. 申论校验 */
+    var slC=strictNum($('bf-sl-count').value,{allowEmpty:true,integer:true,min:0,max:10000});
+    if(!slC.ok){ bfErr('申论篇数：'+slC.msg); return; }
+    var slS=strictNum($('bf-sl-score').value,{allowEmpty:true,min:0,max:100});
+    if(!slS.ok){ bfErr('申论分数：'+slS.msg+'（0~100）'); return; }
+    if(slC.v==null && slS.v!=null){ bfErr('填了申论分数，也要顺手填一下累计篇数'); return; }
+    /* 3. 模考校验 */
+    var mockRows=[].slice.call(document.querySelectorAll('.bf-mock-row'));
+    var mocks=[];
+    for(var j=0;j<mockRows.length;j++){
+      var mr=mockRows[j];
+      var dS=mr.querySelector('[data-bf="mdate"]').value.trim();
+      var sc=mr.querySelector('[data-bf="mscope"]').value;
+      var sS=mr.querySelector('[data-bf="mscore"]').value;
+      var fS=mr.querySelector('[data-bf="mfull"]').value;
+      if(dS==='' && sS==='' && fS===''){ continue; }
+      if(dS===''){ bfErr('模考日期不能空，格式如 2026-08-15'); return; }
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dS)){ bfErr('模考日期「'+dS.slice(0,10)+'」格式不对，要像 2026-08-15 这样'); return; }
+      if(new Date(dS.replace(/-/g,'/'))>new Date()){ bfErr('模考日期不能是未来呀'); return; }
+      var sv=strictNum(sS,{min:0,max:1000});
+      if(!sv.ok){ bfErr('模考得分：'+sv.msg); return; }
+      var fv=strictNum(fS,{min:1,max:1000});
+      if(!fv.ok){ bfErr('模考满分：'+fv.msg); return; }
+      if(sv.v>fv.v){ bfErr('模考得分（'+sv.v+'）不能大于满分（'+fv.v+'）'); return; }
+      mocks.push({date:dS,scope:sc,score:sv.v,full:fv.v});
+    }
+    if(mods.length===0 && (slC.v==null||slC.v===0) && slS.v==null && mocks.length===0){
+      bfErr('什么都还没填——至少补录一项，或者点取消'); return;
+    }
+    if(slC.v!=null && slC.v>0 && slC.v>500){ bfErr('申论篇数最多补录 500 篇'); return; }
+
+    /* —— 写入 —— */
+    var today=todayStr();
+    var writes=[];
+    /* 3a. 客观题 → 学习记录表（类型=历史基线，用时0不污染时长） */
+    mods.forEach(function(b,idx){
+      var note='【历史补录】'+b.mod+' 累计'+b.t+'题对'+b.r+'题';
+      var sp={
+        '日期':{date:today},
+        '模块':{select:optId('study_module',b.mod)},
+        '类型':{select:optId('study_type','历史基线')},
+        '题量':{number:b.t},
+        '错题数':{number:b.t-b.r},
+        '用时分钟':{number:0},
+        '备注':{text:note}
+      };
+      var lp={record_id:'bf_'+Date.now()+'_'+idx,日期:today+'T00:00:00Z',模块:b.mod,类型:'历史基线',题量:b.t,错题数:b.t-b.r,用时分钟:0,备注:note};
+      writes.push(addStudyRecord(sp,lp).then(function(ok){ if(ok){ state.study.unshift(lp); } }));
+    });
+    /* 3b. 申论 → my_shenlun（补录记录带 backfill 标记；篇数 0 时只记录分数） */
+    if(slC.v!=null && slC.v===0 && slS.v!=null){
+      var list0=lsGet('my_shenlun')||[];
+      list0.push({title:'历史练笔（仅记录分数）',type:$('bf-sl-type').value,date:today,score:Math.round(slS.v),chars:0,backfill:true});
+      lsSet('my_shenlun',list0);
+    }else if(slC.v!=null && slC.v>0){
+      var list=lsGet('my_shenlun')||[];
+      for(var k2=0;k2<slC.v;k2++){
+        list.push({title:'历史练笔'+(slC.v>1?(' '+(k2+1)):''),type:$('bf-sl-type').value,date:today,score:(k2===0&&slS.v!=null)?Math.round(slS.v):(60+((k2*7)%15)),chars:0,backfill:true});
+      }
+      lsSet('my_shenlun',list);
+    }
+    /* 3c. 模考 → localStorage（bf_mocks，只做记录展示，暂不参与追踪） */
+    if(mocks.length){
+      var all=(lsGet('bf_mocks')||[]).concat(mocks);
+      lsSet('bf_mocks',all);
+    }
+    Promise.all(writes).then(function(){
+      closeSheet();
+      renderAll();
+      var parts=[];
+      if(mods.length) parts.push(mods.length+'个模块刷题');
+      if(slC.v!=null && slC.v>0) parts.push(slC.v+'篇申论');
+      else if(slC.v===0 && slS.v!=null) parts.push('申论分数1条');
+      if(mocks.length) parts.push(mocks.length+'次模考');
+      toast('📥 已补录：'+parts.join('、'),true);
+      if(typeof checkAndNotify==='function') setTimeout(checkAndNotify,1500);
+    });
+  });
+}
+
+/* AI 设置面板（baseUrl/key/模型名均可自定义 + 验证） */
+function openAISettings(){
+  var has=aiReady();
+  var cfg=getAICfg();
+  openSheet('<h3 style="margin-bottom:6px">⚙️ AI 接口配置<\x2Fh3>'
+    +'<p style="font-size:12px;color:var(--ink2);margin-bottom:12px;line-height:1.7">兼容 OpenAI 接口格式的任意服务商（智谱/DeepSeek/Kimi/通义…）。Key 只存你浏览器本地，不上传。</p>'
+    +'<div class="field"><label>API Base URL（完整 chat/completions 地址）</label>'
+    +'<input class="input" id="ai-base-input" type="url" placeholder="https://open.bigmodel.cn/api/coding/paas/v4/chat/completions" value="'+esc(cfg.base)+'"></div>'
+    +'<div class="field"><label>模型名称</label>'
+    +'<input class="input" id="ai-model-input" type="text" placeholder="glm-5.3-flash" value="'+esc(cfg.model)+'"></div>'
+    +'<div class="field"><label>API Key（'+(has?'已配置，留空则不修改':'尚未配置')+'）</label>'
+    +'<input class="input" id="ai-key-input" type="password" placeholder="'+(has?'●●●●●●（已保存）':'粘贴你的 API Key')+'"></div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn btn-pri" style="flex:1" id="ai-key-save">保存并验证</button>'
+    +(has?'<button class="btn btn-ghost" id="ai-key-clear">清除Key</button>':'')
+    +'<button class="btn btn-ghost" data-sf-close>取消</button></div>'
+    +'<div id="ai-test-state" style="font-size:12px;color:var(--ink2);margin-top:10px;line-height:1.7"></div>');
+  $('ai-key-save').addEventListener('click',function(){
+    var base=$('ai-base-input').value.trim();
+    var model=$('ai-model-input').value.trim();
+    var key=$('ai-key-input').value.trim();
+    if(!base||base.indexOf('http')!==0){ toast('Base URL 需以 http 开头'); return; }
+    if(!model){ toast('填一下模型名'); return; }
+    if(!has && !key){ toast('首次配置需粘贴 Key'); return; }
+    lsSet('ai_cfg',{base:base,model:model});
+    if(key){
+      if(key.length!==49||key.indexOf('.')<0){ toast('提示：智谱Key为49字符含一个点；其他厂商格式不同，可继续验证'); }
+      lsSet('glm_api_key',key);
+    }
+    var st=$('ai-test-state'); st.textContent='验证中：正在用 '+model+' 发起真实请求…';
+    aiChat([{role:'user',content:'回复两个字：成功'}],{max_tokens:512}).then(function(r){
+      st.innerHTML=sanitizeHtml('<span style="color:var(--green-d)">✓ 验证成功！'+esc(model)+' 连通，AI 批改/识别已就绪</span>');
+      setTimeout(function(){ closeSheet(); toast('AI 配置完成'); },900);
+    }).catch(function(e){
+      st.innerHTML=sanitizeHtml('<span style="color:var(--red)">✗ 验证失败：'+esc(String(e).slice(0,90))+'</span><br><span style="color:var(--ink3)">排查：Base URL 是否到 /chat/completions · Key 是否有效 · 模型名是否正确</span>');
+    });
+  });
+  var cb=$('ai-key-clear');
+  if(cb) cb.addEventListener('click',function(){
+    lsDel('glm_api_key'); toast('Key 已清除（接口配置保留）'); closeSheet();
+  });
+}
+
+
+
+/* 基础对话调用（文本消息数组） */
+function aiChat(messages,opts){
+  opts=opts||{};
+  var key=aiKey();
+  if(!key) return Promise.reject('未配置 API Key');
+  var body={
+    model:getAICfg().model,
+    messages:messages,
+    max_tokens:opts.max_tokens||2048,
+    thinking:{type:'disabled'}
+  };
+  // API 级结构化约束：GLM 支持 response_format，强制模型输出合法 JSON
+  if(opts.jsonMode){ body.response_format={type:'json_object'}; }
+  return fetch(getAICfg().base,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify(body)
+  }).then(function(r){
+    return r.json().then(function(d){
+      if(!r.ok){ throw (d&&d.error&&d.error.message)||('HTTP '+r.status); }
+      var msg=d.choices&&d.choices[0]&&d.choices[0].message;
+      var txt=(msg&&msg.content)||'';
+      if(!txt) throw 'AI 返回为空（可能是网络或配额问题）';
+      return txt;
+    });
+  });
+}
+/* 图片识别（vision）：传 dataUrl + 提示词 */
+function aiVision(dataUrl,prompt,maxTokens){
+  var messages=[{
+    role:'user',
+    content:[
+      {type:'image_url',image_url:{url:dataUrl}},
+      {type:'text',text:prompt}
+    ]
+  }];
+  var key=aiKey();
+  if(!key) return Promise.reject('未配置 API Key');
+  var body={model:getAICfg().model,messages:messages,max_tokens:maxTokens||2048,thinking:{type:'disabled'}};
+  return fetch(getAICfg().base,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify(body)
+  }).then(function(r){
+    return r.json().then(function(d){
+      if(!r.ok){ throw (d&&d.error&&d.error.message)||('HTTP '+r.status); }
+      var msg=d.choices&&d.choices[0]&&d.choices[0].message;
+      var txt=(msg&&msg.content)||'';
+      if(!txt) throw 'AI 返回为空';
+      return txt;
+    });
+  });
+}
+/* —— 系统提示词 —— */
+/* 1) 申论手写识别：忠实誊录，不润色不纠错 */
+var PROMPT_OCR='你是申论作答卷面的文字识别助手。任务：把图片中的手写/打印申论作答逐字誊录为电子文本。\n'
+ +'【输入】一张申论作答照片（可能含手写体、横线格、涂改痕迹）。\n'
+ +'【输出】只输出识别出的正文文本，按原文分段。不要输出任何解释、标题前缀或Markdown符号。\n'
+ +'【规则】\n'
+ +'1. 逐字忠实誊录：不纠正错别字、不润色、不补全、不改标点——错字就用原样（可用〔疑为「X」〕标注极难辨认处）。\n'
+ +'2. 无法辨认的字用 ▢ 占位。\n'
+ +'3. 保留原文分段与序号（如「第一」「一、」）。\n'
+ +'4. 若图片不是申论作答（如风景照、无关文档），只输出：[非作答图片]。\n'
+ +'5. 不要回答图片内容 related 的任何问题，只做誊录。';
+/* 2) 申论 AI 批改：JSON 输出，五维度 */
+var PROMPT_GRADE='你是公考申论阅卷教练。任务：按申论评分标准对学生作答进行批改打分。\n'
+ +'【输入】题型、题目、学生作答全文。\n'
+ +'【评分维度】各 20 分共 100 分：切题（立意是否扣题、观点是否明确）、结构（总分总、分论点清晰度）、表达（语言规范、逻辑连贯、文采）、内容（论证充分、素材运用）、规范（规范词/政策表述、格式、字数）。\n'
+ +'【输出】只输出一个 JSON 对象，不要任何其他文字或代码块标记，格式：\n'
+ +'{"score":总分整数,"dims":[{"key":"qieti","name":"切题","score":0-20,"comment":"一句点评"},...共5个],"comment":"总体评价2-3句，先肯定再建议，语气鼓励","suggestions":["具体可执行的改进建议1","2","3"],"highlights":["作答中的亮点句1","2"],"sample_fix":"挑一个写得最弱的段落，给出示范性改写（100-200字）"}\n'
+ +'【边界】\n'
+ +'1. 不代写全文，只改写局部示范；\n'
+ +'2. 评分客观中性，参照国考阅卷尺度，不盲目夸也不打压；\n'
+ +'3. comment 与 suggestions 用中文，语气像懂行的同伴，不说教；\n'
+ +'4. 作答过短(<50字)时 score 按比例给低分，suggestions 里第一条说明字数不足。\n'
+ +'5. JSON 必须可被 JSON.parse 直接解析。';
+/* 打卡截图识别（学习记录辅助）：识别题量/时长/模块 */
+var PROMPT_CHECKIN='你是学习记录识别助手。任务：从学习/刷题APP截图或笔记照片中提取结构化学习数据。\n'
+ +'【输出】只输出一个 JSON 对象，格式：\n'
+ +'{"found":true/false,"module":"模块名(政治理论/常识判断/言语理解/判断推理/数量关系/资料分析/申论/时事政治 之一或空)","sub":"细分考点或空","total":题量整数或null,"wrong":错题数整数或null,"minutes":学习分钟数整数或null,"note":"一句备注或空"}\n'
+ +'【规则】1. 数字一律为阿拉伯整数；找不到的字段用 null。2. 明显不是学习截图时 found=false。3. 只输出 JSON，无其他文字。';
+
+/* 解析 AI 返回的 JSON（容错：剥代码块标记） */
+/* —— 容错层①：AI输出标准化 ——
+   任何形状的 adjustments 输入 → 一律转为 string[]（过滤垃圾项，截断长度） */
+function normalizeAdjustments(raw){
+  var out=[];
+  try{
+    var arr=null;
+    if(Array.isArray(raw)){ arr=raw; }
+    else if(typeof raw==='string'){ arr=raw.split('\n'); }
+    else if(raw&&typeof raw==='object'&&raw.text){ arr=[raw]; }
+    else if(raw&&typeof raw==='object'&&raw.adjustments){ return normalizeAdjustments(raw.adjustments); }
+    else{ return []; }
+    arr.forEach(function(item){
+      var s='';
+      if(typeof item==='string') s=item;
+      else if(item&&typeof item==='object'){ s=item.text||item.content||item.suggestion||''; }
+      else if(typeof item==='number') s=String(item);
+      s=String(s).trim();
+      if(s && s!=='null' && s!=='undefined' && s!=='[object Object]'){
+        out.push(s.slice(0,200));
+      }
+    });
+  }catch(e){ return []; }
+  return out.slice(0,6);
+}
+/* —— 容错层②：调整层读取净化 ——
+   localStorage 被污染（旧版本/意外写入）时：非数组→空；脏项→过滤 */
+function sanitizeAdjustments(list){
+  if(!Array.isArray(list)) return [];
+  return list.filter(function(a){
+    return a && typeof a==='object' && Array.isArray(a.changes);
+  }).map(function(a){
+    return {
+      date:String(a.date||'').slice(0,10),
+      week:(typeof a.week==='number')?a.week:null,
+      fromAI:!!a.fromAI,
+      changes:a.changes.filter(function(c){ return c&&typeof c==='object'&&typeof c.text==='string'&&c.text.trim(); })
+                       .map(function(c){ return {type:String(c.type||'ai'),text:c.text.slice(0,200)}; })
+    };
+  }).filter(function(a){ return a.changes.length>0; });
+}
+function parseAIJSON(txt){
+  var s=String(txt).trim();
+  s=s.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  var m=s.match(/\{[\s\S]*\}/);
+  if(m) s=m[0];
+  return JSON.parse(s);
+}
+
+/* ==================== 渲染层：我的申论（练笔 + 图片识别 + 打分） ==================== */
+function renderEssayPractice(el){
+  var history=lsGet('my_shenlun')||[];
+  var html='<div class="sec-title">我的申论练笔（写一写，AI 帮你打分）<\x2Fdiv>';
+  // 练笔历史
+  if(history.length){
+    html+='<div class="card" style="margin-bottom:12px"><h2 style="margin-bottom:8px">📚 我的练笔记录（'+history.length+' 篇）<\x2Fh2>';
+    history.slice().reverse().forEach(function(h,i){
+      var score=h.score!=null?Math.round(h.score):null;
+      var scHtml = score!=null ? '<span style="color:'+(score>=75?'var(--green-d)':score>=60?'var(--gold-d)':'var(--red)')+';font-weight:800">'+score+'分<\x2Fspan>' : '<span style="color:var(--ink3)">待评<\x2Fspan>';
+      if(h.backfill){ scHtml='<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:var(--bg2);color:var(--ink3)">补录'+(score!=null?(' · '+score+'分'):'')+'<\x2Fspan>'; }
+      html+='<div class="essay-item" data-mysl-open="'+i+'">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center">'
+        +'<h3 style="margin:0">'+esc(h.title||'未命名练笔')+'<\x2Fh3>'+scHtml+'<\x2Fdiv>'
+        +'<div style="font-size:12px;color:var(--ink2)">'+esc(h.date||'')+' · '+esc(h.type||'')+'<\x2Fdiv><\x2Fdiv>';
+    });
+    html+='<\x2Fdiv>';
+  }else{
+    html+='<div class="empty" style="margin-bottom:12px">还没有练笔，从 0 到 1，迈出第一步吧 🌱<\x2Fdiv>';
+  }
+  // 练笔入口
+  html+='<button class="btn btn-pri btn-block" id="btn-new-practice">✍️ 写一篇申论<\x2Fbutton>';
+  el.innerHTML=sanitizeHtml(html);
+  // 绑定事件
+  $('btn-new-practice').addEventListener('click',openPracticeEditor);
+  el.querySelectorAll('[data-mysl-open]').forEach(function(node){
+    node.addEventListener('click',function(){
+      var idx=parseInt(node.getAttribute('data-mysl-open'));
+      var list=lsGet('my_shenlun')||[];
+      var h=list[list.length-1-idx];
+      if(!h) return;
+      if(h.backfill){
+        openSheet('<h3 style="margin-bottom:8px">📥 历史练笔<\x2Fh3>'
+          +'<p style="font-size:14px;line-height:1.9;color:var(--ink2)">「'+esc(h.title||'')+'」<\x2Fp>'
+          +'<p style="font-size:13px;color:var(--ink2);line-height:1.8">题型：'+esc(h.type||'—')+'<\x2Fbr>日期：'+esc(h.date||'—')+(h.score!=null?('<\x2Fbr>记录分数：<b>'+Math.round(h.score)+'分</b>（手动补录）'):'')+'<\x2Fp>'
+          +'<p style="font-size:12px;color:var(--ink3);line-height:1.7">这是补录的历史记录，没有作答全文，仅供统计。新写的申论会有 AI/规则逐维批改。<\x2Fp>'
+          +'<button class="btn btn-ghost btn-block" data-sf-close>知道了<\x2Fbutton>');
+        return;
+      }
+      openPracticeResult(h);
+    });
+  });
+}
+
+/* 练笔编辑器：输入题目+作答，或上传图片识别 */
+function openPracticeEditor(){
+  openFull('写申论 · 练笔', ''
+    +'<div class="field"><label>题目 / 主题（必填）<\x2Flabel>'
+    +'<input class="input" id="pr-title" placeholder="如：以「创新引领未来」为题，写一篇议论文" maxlength="60"><\x2Fdiv>'
+    +'<div class="field"><label>题型<\x2Flabel>'
+    +'<select class="select" id="pr-type">'
+    +'<option>大作文（议论文）<\x2Foption><option>概括归纳题<\x2Foption><option>综合分析题<\x2Foption><option>提出对策题<\x2Foption><option>公文写作（贯彻执行）<\x2Foption>'
+    +'<\x2Fselect><\x2Fdiv>'
+    +'<div class="field"><label>你的作答（直接输入）<\x2Flabel>'
+    +'<textarea class="input" id="pr-answer" rows="10" placeholder="在这里写下你的申论作答……" style="resize:vertical;line-height:1.7"><\x2Ftextarea><\x2Fdiv>'
+    +'<div class="field"><label>或上传手写/打印图片，自动识别文字<\x2Flabel>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<button class="btn btn-ghost btn-sm" id="btn-pr-upload">📷 上传图片识别<\x2Fbutton>'
+    +'<span id="pr-ocr-state" style="font-size:12px;color:var(--ink3)"><\x2Fspan><\x2Fdiv>'
+    +'<input type="file" id="pr-file" accept="image/*" class="hidden"><\x2Fdiv>'
+    +'<div style="display:flex;gap:8px;margin-top:14px">'
+    +'<button class="btn btn-pri" style="flex:1" id="btn-pr-score">提交评分<\x2Fbutton>'
+    +'<button class="btn btn-ghost" data-sf-close>取消<\x2Fbutton><\x2Fdiv>'
+    +'<div style="font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.6">'
+    +'<div id="pr-ai-state" style="font-size:12px;margin-top:8px;padding:8px 10px;border-radius:8px;background:'+(aiReady()?'var(--green-l)':'var(--gold-l)')+'">'
+    +(aiReady()?'🤖 AI 批改已就绪：上传手写图自动识别文字，提交后 AI 按国考尺度批改打分'
+      :'⚙️ 当前为本地规则评分。点 <a href="javascript:void(0)" id="pr-ai-setup">这里配置 AI Key<\x2Fa> 可启用手写识别+AI批改')
+    +'<\x2Fdiv>'
+    +'评分仅供参考，不替代人工精批。<\x2Fdiv>'
+  );
+  // AI 设置入口
+  var setupLink=$('pr-ai-setup');
+  if(setupLink) setupLink.addEventListener('click',openAISettings);
+
+  $('btn-pr-upload').addEventListener('click',function(){ $('pr-file').click(); });
+  $('pr-file').addEventListener('change',function(e){
+    var f=e.target.files[0]; if(!f) return;
+    var st=$('pr-ocr-state');
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      var dataUrl=ev.target.result;
+      window._prPhoto=dataUrl;
+      // 未配置 AI：降级为原图附带+誊录提示
+      if(!aiReady()){
+        st.innerHTML=sanitizeHtml('<span style="color:var(--gold-d)">图片已就绪。配置 AI Key 后可自动识别文字（点右上角齿轮）<\x2Fspan>');
+        return;
+      }
+      st.innerHTML=sanitizeHtml('<span style="color:var(--green-d)">📸 图片已就绪，AI 识别中…（约10-30秒）<\x2Fspan>');
+      aiVision(dataUrl,PROMPT_OCR,2048).then(function(txt){
+        if(txt.indexOf('[非作答图片]')>=0){
+          st.innerHTML=sanitizeHtml('<span style="color:var(--red)">这张图不是申论作答，换一张试试<\x2Fspan>');
+          window._prPhoto=null;
+          return;
+        }
+        var ta=$('pr-answer');
+        ta.value=txt.trim();
+        st.innerHTML=sanitizeHtml('<span style="color:var(--green-d)">✓ 识别完成，已填入作答框（请核对错别字）<\x2Fspan>');
+        toast('识别完成，请核对后提交');
+      }).catch(function(err){
+        st.innerHTML=sanitizeHtml('<span style="color:var(--red)">识别失败：'+esc(String(err).slice(0,60))+'（可手动输入）<\x2Fspan>');
+      });
+    };
+    reader.readAsDataURL(f);
+    e.target.value='';
+  });
+
+  $('btn-pr-score').addEventListener('click',function(){
+    var title=$('pr-title').value.trim();
+    var answer=$('pr-answer').value.trim();
+    var type=$('pr-type').value;
+    if(!title){ toast('先写题目/主题'); return; }
+    if(!answer){ toast('先写下你的作答，或上传图片'); return; }
+    var btn=this; btn.disabled=true; btn.textContent=(aiReady()?'AI 批改中…':'评分中…');
+    var photo=window._prPhoto; window._prPhoto=null;
+    var finish=function(result){
+      result.date=todayStr();
+      if(photo) result.photo=photo;
+      var list=lsGet('my_shenlun')||[];
+      list.push(result);
+      try{ lsSet('my_shenlun',list); }catch(x){ /* 图太大存不下时只存文字 */ list[list.length-1].photo=null; try{ lsSet('my_shenlun',list); }catch(y){} }
+      closeSheet();
+      openPracticeResult(result);
+      toast('评分完成，已保存');
+    };
+    if(aiReady()){
+      // AI 批改
+      var userMsg='【题型】'+type+'\n【题目】'+title+'\n【学生作答】\n'+answer;
+      aiChat([
+        {role:'system',content:PROMPT_GRADE},
+        {role:'user',content:userMsg}
+      ],{max_tokens:4096}).then(function(txt){
+        var d=parseAIJSON(txt);
+        var dims=(d.dims||[]).map(function(x){ return {key:(x.key||''),name:x.name||'',score:Number(x.score)||0,full:20,comment:x.comment||''}; });
+        var result={
+          title:title,type:type,answer:answer,chars:answer.replace(/\s/g,'').length,
+          score:Number(d.score)||0, dims:dims,
+          comment:d.comment||'', suggestions:(d.suggestions||[]).slice(0,5),
+          highlights:d.highlights||[], sample_fix:d.sample_fix||'', byAI:true
+        };
+        finish(result);
+      }).catch(function(err){
+        toast('AI 批改失败，用本地评分兜底');
+        var result=scoreShenlun({title:title,answer:answer,type:type});
+        finish(result);
+      });
+    }else{
+      setTimeout(function(){ finish(scoreShenlun({title:title,answer:answer,type:type})); },60);
+    }
+  });
+}
+
+/* 显示练笔评分结果 */
+function openPracticeResult(h){
+  var body='';
+  body+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'
+    +'<div style="font-size:12px;color:var(--ink3)">'+esc(h.date||'')+' · '+esc(h.type||'')+(h.byAI?' · 🤖 AI批改':' · 本地评分')+'<\x2Fdiv>'
+    +'<div style="font-size:32px;font-weight:800;color:'+(h.score>=75?'var(--green-d)':h.score>=60?'var(--gold-d)':'var(--red)')+'">'+Math.round(h.score)+'<span style="font-size:14px">分<\x2Fspan><\x2Fdiv><\x2Fdiv>';
+  body+='<div style="font-size:17px;font-weight:700;margin-bottom:10px">'+esc(h.title||'')+'<\x2Fdiv>';
+
+  // 附带的原作答图片（手写/打印）
+  if(h.photo){
+    body+='<div style="margin-bottom:12px"><div style="font-size:12px;color:var(--ink3);margin-bottom:4px">📷 原作答图片<\x2Fdiv>'
+      +'<img src="'+h.photo+'" style="max-width:100%;max-height:420px;border-radius:10px;border:1px solid var(--line)" alt="作答图片"><\x2Fdiv>';
+  }
+
+  // 我的作答全文
+  if(h.answer){
+    body+='<div class="rule-card" style="margin-bottom:12px"><h4>📄 我的作答（'+(h.chars||0)+'字）<\x2Fh4><div style="font-size:14px;line-height:1.85;white-space:pre-wrap">'+esc(h.answer)+'<\x2Fdiv><\x2Fdiv>';
+  }
+
+  // 分维度评分条
+  var dims=h.dims||[];
+  var dimNames={qieti:'切题',jiegou:'结构',biaoda:'表达',zishu:'字数',guifan:'规范词',neirong:'内容'};
+  body+='<div class="rule-card" style="margin-bottom:12px"><h4>📊 分维度评分<\x2Fh4>';
+  dims.forEach(function(d){
+    var full=d.full||20;
+    var pct=d.score/full*100;
+    var color=pct>=80?'var(--green-d)':pct>=60?'var(--gold-d)':'var(--red)';
+    body+='<div style="margin-bottom:8px">'
+      +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><span>'+esc(d.name||dimNames[d.key]||d.key)+'<\x2Fspan><span style="color:'+color+';font-weight:700">'+d.score+'/'+full+'<\x2Fspan><\x2Fdiv>'
+      +'<div style="height:6px;background:var(--bg2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+color+';border-radius:3px"><\x2Fdiv><\x2Fdiv>'
+      +(d.comment?'<div style="font-size:11px;color:var(--ink2);margin-top:2px">'+esc(d.comment)+'<\x2Fdiv>':'')
+      +'<\x2Fdiv>';
+  });
+  body+='<\x2Fdiv>';
+
+  // 总评
+  body+='<div class="rule-card rose" style="margin-bottom:12px"><h4>💬 总体评价<\x2Fh4><p style="line-height:1.9">'+esc(h.comment||'')+'<\x2Fp><\x2Fdiv>';
+
+  // 亮点句
+  if(h.highlights && h.highlights.length){
+    body+='<div class="rule-card gold" style="margin-bottom:12px"><h4>✨ 亮点句<\x2Fh4>';
+    h.highlights.forEach(function(s){ body+='<p style="margin-bottom:6px;color:var(--gold-d);line-height:1.7">「'+esc(s)+'」<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  // 示范改写
+  if(h.sample_fix){
+    body+='<div class="rule-card" style="margin-bottom:12px"><h4>✍️ 示范改写（最弱段落）<\x2Fh4><div style="font-size:14px;line-height:1.85;white-space:pre-wrap;color:var(--ink2)">'+esc(h.sample_fix)+'<\x2Fdiv><\x2Fdiv>';
+  }
+
+  // 改进建议
+  if(h.suggestions && h.suggestions.length){
+    body+='<div class="rule-card gold"><h4>🔧 改进建议<\x2Fh4>';
+    h.suggestions.forEach(function(s){ body+='<p style="margin-bottom:5px;line-height:1.7">· '+esc(s)+'<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  body+='<div style="font-size:11px;color:var(--ink3);margin-top:12px">'+(h.byAI?'AI 批改仅供参考，不替代人工精批。':'本地规则评分，配置 AI Key 可获得更精准的 AI 批改。')+'<\x2Fdiv>';
+  openFull(h.title||'练笔评分',body);
+}
+
+/* ==================== 申论批改评分引擎（本地规则） ==================== */
+function scoreShenlun(input){
+  var title=input.title||'';
+  var answer=input.answer||'';
+  var type=input.type||'大作文（议论文）';
+  var chars=answer.replace(/\s/g,'').length;
+  var dims=[];
+  var suggestions=[];
+
+  // 1. 切题度（标题/正文是否含主题关键词）
+  var titleKeywords=title.replace(/[，。、：；（）《》""''\s]/g,'').slice(0,20);
+  var qietiScore=0, qietiFull=20;
+  // 提取主题词（去掉"以/为题/围绕/写一篇/议论文"等虚词）
+  var themeWords=titleKeywords.split('');
+  var hitCount=0;
+  // 简单策略：正文长度足够 + 出现标题中的实词
+  var coreTerms=extractCoreTerms(title);
+  coreTerms.forEach(function(term){
+    if(answer.indexOf(term)>=0) hitCount++;
+  });
+  qietiScore=Math.min(qietiFull, Math.round(qietiFull*0.4 + (coreTerms.length? hitCount/coreTerms.length:0)*qietiFull*0.6));
+  if(hitCount===0){ suggestions.push('作答似乎没有紧扣题目主题，建议在开头、分论点和结尾反复点题。'); }
+
+  // 2. 结构（是否分段 + 有无分论点标记）
+  var jiegouScore=0, jiegouFull=20;
+  var paras=answer.split(/\n+/).filter(function(p){return p.trim().length>10;});
+  if(paras.length>=5) jiegouScore+=10; else if(paras.length>=3) jiegouScore+=6; else jiegouScore+=3;
+  var hasFenlun=/首先|其次|再次|最后|一方面|另一方面|第一|第二|第三|其一|其二|其一|一是|二是|三是|分论点/.test(answer);
+  if(hasFenlun) jiegouScore+=6;
+  if(/总之|综上所述|因此|故而|总而言之|由此可见/.test(answer)) jiegouScore+=4;
+  jiegouScore=Math.min(jiegouFull,jiegouScore);
+  if(paras.length<3){ suggestions.push('段落偏少，建议采用「开头—分论点（2~3个）—结尾」的总分总结构。'); }
+  if(!hasFenlun){ suggestions.push('缺少明显的分论点标志（如「第一/第二/一方面」），建议让结构更清晰。'); }
+
+  // 3. 表达（规范词 + 政策热词命中）
+  var guifanScore=0, guifanFull=20;
+  var stdWords=(window.KB_DATA.shenlun_tools&&window.KB_DATA.shenlun_tools.standard_words)||[];
+  var hitWords=[];
+  stdWords.forEach(function(dom){ (dom.words||[]).forEach(function(w){ if(answer.indexOf(w.word)>=0) hitWords.push(w.word); }); });
+  // 政策热词（申论大作文高频核心词汇，客观列出用于检测）
+  var POLICY_TERMS=['高质量发展','新发展理念','以人民为中心','久久为功','精准施策','因地制宜','绿水青山就是金山银山','科技自立自强','共同富裕','乡村振兴','守正创新','创新驱动','统筹兼顾','系统思维','底线思维','钉钉子精神','功成不必在我','功成必定有我','问题导向','目标导向','新发展格局','中国式现代化','基层治理','共建共治共享','因地制宜','分类施策','靶向发力','抓铁有痕','踏石留印','人民至上','文化自信','生态文明','绿色低碳','数字中国','人才强国','协同发展','优势互补','长远眼光','战略定力','科学决策','法治思维','依法治国','全面从严治党','自我革命'];
+  POLICY_TERMS.forEach(function(t){ if(answer.indexOf(t)>=0) hitWords.push(t); });
+  guifanScore=Math.min(guifanFull, hitWords.length*2);
+  if(hitWords.length<4){ suggestions.push('规范词/政策热词使用偏少（命中 '+hitWords.length+' 个），可到「写作工具」积累，如「久久为功」「精准施策」等。'); }
+
+  // 4. 表达流畅（字数合理性 + 标点）
+  var biaodaScore=0, biaodaFull=20;
+  if(type.indexOf('大作文')>=0){
+    if(chars>=800) biaodaScore+=8; else if(chars>=500) biaodaScore+=5; else biaodaScore+=2;
+  }else{
+    if(chars>=150) biaodaScore+=6; else if(chars>=80) biaodaScore+=4; else biaodaScore+=2;
+  }
+  var hasQuote=/「」|""|“”|古人云|正如|有言/.test(answer);
+  if(hasQuote) biaodaScore+=4;
+  var hasParallel=/(既是|不是|无论).*?，(也|而是|无论).*?，/.test(answer);
+  if(hasParallel) biaodaScore+=4;
+  var sentenceCount=(answer.match(/[。！？]/g)||[]).length;
+  if(sentenceCount>0 && chars/sentenceCount<80) biaodaScore+=4; // 句子长度适中
+  biaodaScore=Math.min(biaodaFull,biaodaScore);
+  if(!hasQuote){ suggestions.push('可适当引用金句或古文增强文采，如「功成不必在我」「绿水青山就是金山银山」。'); }
+
+  // 5. 字数（独立维度）
+  var zishuScore=0, zishuFull=20;
+  var target = type.indexOf('大作文')>=0?1000:250;
+  zishuScore=Math.min(zishuFull, Math.round(chars/target*zishuFull));
+  if(chars < target*0.5){ suggestions.push('字数偏少（'+chars+'字），'+type+'建议达到'+target+'字左右，内容会更充实。'); }
+
+  dims=[
+    {key:'qieti',score:qietiScore,full:qietiFull},
+    {key:'jiegou',score:jiegouScore,full:jiegouFull},
+    {key:'biaoda',score:biaodaScore,full:biaodaFull},
+    {key:'zishu',score:zishuScore,full:zishuFull},
+    {key:'guifan',score:guifanScore,full:guifanFull}
+  ];
+  var total=0; dims.forEach(function(d){ total+=d.score; });
+  var totalFull=0; dims.forEach(function(d){ totalFull+=d.full; });
+  var score=Math.round(total/totalFull*100);
+
+  // 总评
+  var comment;
+  if(score>=80) comment='非常棒！你的作答结构清晰、表达规范，已经具备申论高分的雏形。继续保持，重点打磨个别分论点的论证深度即可。';
+  else if(score>=65) comment='不错，基础框架已经搭起来了。主要提升空间在规范表达和论证深度，多积累规范词、金句，让语言更"申论"。';
+  else if(score>=50) comment='已经迈出第一步了！目前结构还比较松散，表达偏口语化。建议先模仿范文的「总分总」结构，逐步替换大白话为规范词。';
+  else comment='万事开头难，能写出来就是胜利！建议先多看范文结构、积累规范词，从"能写"到"写规范"需要一个过程，慢慢来。';
+
+  if(score>=80) suggestions.unshift('保持当前水平，建议挑战更高难度的真题主题。');
+  if(suggestions.length>4) suggestions=suggestions.slice(0,4);
+
+  return {title:title,type:type,answer:answer,chars:chars,score:score,dims:dims,comment:comment,suggestions:suggestions};
+}
+
+/* 从标题提取核心主题词 */
+function extractCoreTerms(title){
+  var s=title.replace(/以|为题|围绕|为主题|写一篇|写一|议论文|谈谈|对|的理解|谈谈对|，|。|、|：|；|（|）|《|》|"|"|'|'|\s/g,'');
+  // 取前若干字作为主题词
+  var terms=[];
+  if(s.length>=2){
+    terms.push(s.slice(0,2));
+    if(s.length>=4) terms.push(s.slice(0,4));
+  }
+  return terms;
+}
+
+/* ==================== 渲染层：写作工具（规范词/金词/金句） ==================== */
+var TOOL_TAB='std';
+function renderEssayTools(el){
+  var tools=window.KB_DATA.shenlun_tools||{};
+  var tabs=[
+    {k:'std',n:'规范词',desc:'大白话→规范表达'},
+    {k:'gold',n:'金词',desc:'高频概括词'},
+    {k:'quote',n:'金句·案例',desc:'大作文素材'}
+  ];
+  var html='<div class="chip-row" style="margin-bottom:12px">';
+  tabs.forEach(function(t){
+    html+='<button class="chip'+(TOOL_TAB===t.k?' on':'')+'" data-tooltab="'+t.k+'">'+t.n+'<\x2Fbutton>';
+  });
+  html+='<\x2Fdiv>';
+
+  if(TOOL_TAB==='std'){
+    html+='<div class="sec-title">📖 申论规范词库（'+((tools.standard_words||[]).length)+' 大领域）<\x2Fdiv>';
+    (tools.standard_words||[]).forEach(function(dom){
+      html+='<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:6px">'+esc(dom.domain)+'（'+dom.words.length+'词）<\x2Fh2><div style="font-size:13px;line-height:1.8">';
+      dom.words.forEach(function(w){
+        html+='<div style="padding:3px 0;border-bottom:1px dashed var(--line)"><b>'+esc(w.word)+'<\x2Fb> <span style="color:var(--ink2)">— '+esc(w.scene)+'<\x2Fspan><\x2Fdiv>';
+      });
+      html+='<\x2Fdiv><\x2Fdiv>';
+    });
+  }else if(TOOL_TAB==='gold'){
+    html+='<div class="sec-title">✨ 申论金词库（'+((tools.golden_words||[]).length)+' 大主题）<\x2Fdiv>';
+    (tools.golden_words||[]).forEach(function(th){
+      html+='<div class="card" style="margin-bottom:10px"><h2 style="margin-bottom:6px">'+esc(th.theme)+'（'+th.words.length+'词）<\x2Fh2><div style="font-size:13px;line-height:1.9">';
+      th.words.forEach(function(w){ html+='<span class="tag g" style="margin:2px">'+esc(w)+'<\x2Fspan>'; });
+      html+='<\x2Fdiv><\x2Fdiv>';
+    });
+  }else{
+    // 金句·案例
+    html+='<div class="sec-title">✨ 古文引用金句（'+((tools.guwen||[]).length)+' 条）<\x2Fdiv>';
+    html+='<div class="card" style="margin-bottom:10px"><div style="font-size:13px;line-height:1.8">';
+    (tools.guwen||[]).forEach(function(g){
+      html+='<div style="padding:4px 0;border-bottom:1px dashed var(--line)"><b>「'+esc(g.quote)+'」<\x2Fb> <span style="color:var(--ink3)">——'+esc(g.source)+'<\x2Fspan><br><span style="color:var(--ink2);font-size:12px">'+esc(g.scene)+'<\x2Fspan><\x2Fdiv>';
+    });
+    html+='<\x2Fdiv><\x2Fdiv>';
+
+    html+='<div class="sec-title">🏆 高频经典案例（'+((tools.cases||[]).length)+' 条）<\x2Fdiv>';
+    html+='<div class="card"><div style="font-size:13px;line-height:1.8">';
+    (tools.cases||[]).forEach(function(c){
+      html+='<div style="padding:4px 0;border-bottom:1px dashed var(--line)"><b>'+esc(c.name)+'<\x2Fb> — '+esc(c.desc)+'<br><span style="color:var(--ink3);font-size:12px">'+esc(c.tags||'')+'<\x2Fspan><\x2Fdiv>';
+    });
+    html+='<\x2Fdiv><\x2Fdiv>';
+
+    if(tools.templates && tools.templates.length){
+      html+='<div class="sec-title">📐 通用金句模板<\x2Fdiv>';
+      html+='<div class="card"><div style="font-size:13px;line-height:1.8">';
+      tools.templates.forEach(function(t){
+        html+='<div style="margin-bottom:6px"><b style="color:var(--gold-d)">'+esc(t.type)+'：<\x2Fb><\x2Fdiv>';
+        (t.items||[]).forEach(function(s){ html+='<p style="margin:2px 0 6px">· '+esc(s)+'<\x2Fp>'; });
+      });
+      html+='<\x2Fdiv><\x2Fdiv>';
+    }
+  }
+  el.innerHTML=sanitizeHtml(html);
+  // 绑定 tab 切换
+  el.querySelectorAll('[data-tooltab]').forEach(function(node){
+    node.addEventListener('click',function(){
+      TOOL_TAB=node.getAttribute('data-tooltab');
+      renderEssayTools(el);
+    });
+  });
+}
+
+/* ==================== 复盘中心（周一三五复盘闭环③④） ==================== */
+/* 复盘笔记存 localStorage(review_notes)；云端写任务清单表做备份(任务=标题/模块=W周次/状态=复盘/日期) */
+function getReviewNotes(){ return lsGet('review_notes')||[]; }
+function saveReviewNote(note){
+  var list=getReviewNotes();
+  list.push(note);
+  try{ lsSet('review_notes',list); }catch(x){ toast('本地存储失败，笔记未保存'); return; }
+  // 云端备份（fire-and-forget）
+  if(state.online && typeof addTaskRecord==='function'){
+    addTaskRecord({
+      '任务':{text:'[复盘'+(note.week?('W'+note.week):'')+'] '+(note.title||'学习复盘')},
+      '日期':{date:note.date},
+      '模块':{select:optId('task_module','复盘')},
+      '状态':{select:optId('task_status','复盘')}
+    },{record_id:'rev_'+Date.now(),任务:'[复盘]',日期:note.date+'T00:00:00Z',模块:'复盘',状态:'复盘'});
+  }
+}
+/* 打开复盘面板 */
+function openReviewCenter(){
+  var t=todayStr();
+  var p=getTodayPlan();
+  var wk=p.week;
+  var notes=getReviewNotes();
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+esc(t)+' · W'+(wk||'?')+(isReviewDay(p.dayName)?' · 今天是复盘日 📅':' · 复盘建议在周一/三/五进行')+'<\x2Fdiv>';
+
+  /* 本周数据快照（自动汇总，帮你写笔记） */
+  var snap=weekSnapshot(wk);
+  body+='<div class="rule-card" style="margin-bottom:12px"><h4>📊 本周学习快照（自动生成）<\x2Fh4>'
+    +'<p style="line-height:1.9">'
+    +'学习 '+snap.days+' 天 · 共 '+snap.hours+' 小时<br>'
+    +'练题 '+snap.total+' 道 · 错 '+snap.wrong+' 道'+(snap.total?('（正确率 '+Math.round((snap.total-snap.wrong)/snap.total*100)+'%）'):'')+'<br>'
+    +'涉及模块：'+esc(snap.mods||'未记录')
+    +(snap.shenlun?('<br>申论练笔 '+snap.shenlun+' 篇'):'')
+    +'<\x2Fp><\x2Fdiv>';
+
+  /* 设置入口行：花园名 + 微信提醒 */
+  body+='<div style="display:flex;gap:8px;margin-bottom:8px;font-size:12px">'
+    +'<button class="chip" id="rv-gname">🌷 花园名称</button>'
+    +'<button class="chip" id="rv-notify">'+(notifyReady()?'🔔 提醒已开启':'🔔 微信提醒未开启')+'</button>'
+    +'</div>';
+
+  /* 量化目标追踪（自动对比打卡实际值） */
+  if(typeof goalGapSummary==='function'){
+    var gg=goalGapSummary();
+    if(gg){
+      body+='<div class="rule-card gold" style="margin-bottom:12px"><h4>🎯 当前量化目标（'+esc(gg.date)+'）</h4>';
+      gg.items.forEach(function(it){
+        body+='<div style="display:flex;justify-content:space-between;line-height:2;font-size:13px">'
+          +'<span>'+goalIcon(it.g.st)+' '+esc(it.label)+'：目标 '+esc(it.text)+'</span>'
+          +'<span style="font-weight:700;color:'+(it.g.st==='ok'?'var(--green-d)':(it.g.st==='near'?'var(--gold-d)':'var(--red)'))+'">实际 '+goalLineText(it)+'</span></div>';
+      });
+      body+='<p style="font-size:11px;color:var(--ink3);margin-top:6px">✅达成 🟡接近（≥60%） 🔴差距大——数据实时来自打卡记录</p></div>';
+    }
+  }
+  /* 本周计划 vs 实际（AI 分析入口） */
+  body+='<button class="btn btn-pri btn-block" id="btn-ai-gap" style="margin-bottom:8px">🤖 AI 分析：计划 vs 实际偏差（'+(aiReady()?'含动态调整建议':'需配置AI Key')+'）<\x2Fbutton>';
+  body+='<div style="display:flex;gap:8px;margin-bottom:12px">'
+    +'<button class="btn btn-ghost" style="flex:1" id="btn-rev-manual-adj">✍️ 自己写调整<\x2Fbutton>'
+    +'<button class="btn btn-ghost" style="flex:1" id="btn-rev-adj-list">📋 调整记录<\x2Fbutton>'
+    +'<\x2Fdiv>';
+
+  /* 复盘笔记表单 */
+  body+='<div class="field"><label>📌 本周学了啥（重点内容）<\x2Flabel>'
+    +'<textarea class="input" id="rev-learned" rows="3" placeholder="如：逻辑填空的因果关系标志词；申论概括题的「合并同类项」…" style="resize:vertical"><\x2Ftextarea><\x2Fdiv>';
+  body+='<div class="field"><label>⚠️ 错误点 / 薄弱点<\x2Flabel>'
+    +'<textarea class="input" id="rev-errors" rows="3" placeholder="如：篇章阅读超时；数量关系行程问题还是不会…" style="resize:vertical"><\x2Ftextarea><\x2Fdiv>';
+  body+='<div class="field"><label>📝 下周想调整什么（可选）<\x2Flabel>'
+    +'<input class="input" id="rev-adjust" placeholder="如：数量关系只刷基础题，其他时间给申论"><\x2Fdiv>';
+  body+='<div style="display:flex;gap:8px">'
+    +'<button class="btn btn-pri" style="flex:1" id="rev-save">保存复盘笔记<\x2Fbutton>'
+    +'<button class="btn btn-ghost" data-sf-close>关闭<\x2Fbutton><\x2Fdiv>';
+
+  /* 历史笔记 */
+  if(notes.length){
+    body+='<div class="sec-title" style="margin-top:16px">📚 历史复盘（'+notes.length+' 篇）<\x2Fdiv>';
+    notes.slice().reverse().forEach(function(n,i){
+      body+='<div class="essay-item" data-revopen="'+i+'">'
+        +'<span class="tag">'+esc(n.date||'')+'<\x2Fspan>'+(n.week?'<span class="tag g">W'+n.week+'<\x2Fspan>':'')
+        +'<h3 style="font-size:13px">'+esc((n.title||'学习复盘').slice(0,30))+'<\x2Fh3><\x2Fdiv>';
+    });
+  }
+  openFull('复盘中心',body);
+
+  /* 绑定 */
+  $('rev-save').addEventListener('click',function(){
+    var learned=$('rev-learned').value.trim();
+    var errors=$('rev-errors').value.trim();
+    var adjust=$('rev-adjust').value.trim();
+    if(!learned&&!errors&&!adjust){ toast('至少写一栏'); return; }
+    var note={date:t,week:wk,learned:learned,errors:errors,adjust:adjust,title:(learned||errors).slice(0,40)};
+    saveReviewNote(note);
+    closeSheet();
+    toast('复盘已保存 ✓');
+    openReviewResult(note);
+  });
+  var gnBtn=$('rv-gname');
+  if(gnBtn) gnBtn.addEventListener('click',openGardenNameSettings);
+  var ntBtn=$('rv-notify');
+  if(ntBtn) ntBtn.addEventListener('click',openNotifySettings);
+  var aiBtn=$('btn-ai-gap');
+  aiBtn.addEventListener('click',function(){
+    if(!aiReady()){ openAISettings(); return; }
+    aiGapAnalysis(wk,snap,notes);
+  });
+  var mab=$('btn-rev-manual-adj');
+  if(mab) mab.addEventListener('click',function(){ confirmAdjustmentFlow(null,[],true); });
+  var alb=$('btn-rev-adj-list');
+  if(alb) alb.addEventListener('click',openAdjustmentManager);
+  // 历史笔记点击
+  document.querySelectorAll('[data-revopen]').forEach(function(node){
+    node.addEventListener('click',function(){
+      var idx=parseInt(node.getAttribute('data-revopen'));
+      var list=getReviewNotes();
+      var n=list[list.length-1-idx];
+      if(n) openReviewResult(n);
+    });
+  });
+}
+/* 本周快照 */
+function weekSnapshot(wk){
+  var days={},hours=0,total=0,wrong=0,modSet={},shenlun=0;
+  var wkStart=wk?('2026-10-05'):''; // 简化：7天窗口
+  var t=todayStr();
+  var start=new Date(); start.setDate(start.getDate()-6);
+  var startStr=start.toISOString().slice(0,10);
+  state.checkin.forEach(function(c){
+    var d=String(c['日期']||'').slice(0,10);
+    if(d<startStr||d>t) return;
+    days[d]=1; hours+=num(c['学习时长'])||0;
+  });
+  state.study.forEach(function(s){
+    var d=String(s['日期']||'').slice(0,10);
+    if(d<startStr||d>t) return;
+    if(String(s['类型']||'')==='历史基线') return;
+    total+=num(s['题量'])||0; wrong+=num(s['错题数'])||0;
+    if(s['模块']) modSet[s['模块']]=1;
+  });
+  getReviewNotes; // noop
+  (lsGet('my_shenlun')||[]).forEach(function(e){ if(e.date&&e.date>=startStr&&e.date<=t) shenlun++; });
+  var mods=Object.keys(modSet).join('、');
+  return {days:Object.keys(days).length,hours:Math.round(hours*10)/10,total:total,wrong:wrong,mods:mods,shenlun:shenlun};
+}
+/* 复盘笔记详情 */
+function openReviewResult(n){
+  var body='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+esc(n.date||'')+(n.week?(' · W'+n.week):'')+'<\x2Fdiv>';
+  if(n.learned) body+='<div class="rule-card"><h4>📌 本周学了啥<\x2Fh4><p style="line-height:1.8;white-space:pre-wrap">'+esc(n.learned)+'<\x2Fp><\x2Fdiv>';
+  if(n.errors) body+='<div class="rule-card rose"><h4>⚠️ 错误点<\x2Fh4><p style="line-height:1.8;white-space:pre-wrap">'+esc(n.errors)+'<\x2Fp><\x2Fdiv>';
+  if(n.adjust) body+='<div class="rule-card gold"><h4>📝 下周调整<\x2Fh4><p style="line-height:1.8;white-space:pre-wrap">'+esc(n.adjust)+'<\x2Fp><\x2Fdiv>';
+  openFull('复盘笔记',body);
+}
+/* AI 偏差分析（计划 vs 实际 + 动态调整建议） */
+var PROMPT_GAP='你是公考备考规划教练。任务：对比学生的备考计划与实际执行情况，给出偏差分析和下一步动态调整建议。\n'
+ +'【输入】JSON：plan（本周计划）、actual（本周实际数据）、history（历史复盘要点）、baseline（初始各模块正确率）。\n'
+ +'【分析要求】\n'
+ +'1. 完成度：哪些做到了、哪些没做到（用数据说话）；\n'
+ +'2. 偏差归因：没做到的可能原因（不指责，客观分析：时间不够/内容偏难/状态问题）；\n'
+ +'3. 动态调整：根据实际情况给出下周的具体调整——如果超前了建议加量或提前进入下周内容；如果滞后了建议砍哪些保哪些（主线=申论+资料分析+政治理论）；如果正确率异常低建议降低难度；；【调整触发规则】单次偏差只提示不动计划；连续2个复盘日同向滞后→给出下调20%的具体方案；连续2个复盘日超前→建议加量或提前；调整必须经学生确认才生效\n'
+ +'4. 原则：不排满、留buffer、正向反馈语气、不承诺分数。\n'
+ +'【输出】只输出一个JSON：{"completion":"完成度一句话(如 85% 或 3/5项)","matches":["做到的点1","2"],"gaps":["没做到的点1","2"],"reasons":["可能原因1","2"],"adjustments":["下周具体调整1","2","3"],"encourage":"一句鼓励的话"}\n'
+ +'JSON必须可被JSON.parse解析，不要其他文字。';
+/* ==================== 确定性规则引擎（不依赖AI的偏差分析·兜底层） ====================
+   完成度/偏差/调整建议全部由算法算出——数值永远准确，AI 只是「润色建议」的可选增强。
+   AI 挂了/超时/输出坏数据 → 自动降级到这里，功能不缺席。 */
+function ruleGapAnalysis(wk,snap,notes){
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var p=getTodayPlan();
+  var wp=p.weekPlan;
+  var res={completion:'',matches:[],gaps:[],reasons:[],adjustments:[],encourage:'',byRule:true};
+  // —— 完成度：周内已学天数 / 目标天数（主力+轻量日按计划为6天，buffer日不计）——
+  var targetDays=6;
+  var dayPct=Math.round(snap.days/targetDays*100);
+  var hourTarget=7.5;  // 周计划上限
+  var hourPct=Math.round(snap.hours/hourTarget*100);
+  var overall=Math.min(100,Math.round(dayPct*0.5+hourPct*0.5));
+  res.completion=overall+'%';
+  // —— 做到了 ——
+  if(snap.days>0) res.matches.push('本周已学习 '+snap.days+' 天、累计 '+snap.hours+' 小时');
+  if(snap.total>0) res.matches.push('练题 '+snap.total+' 道'+(snap.total?('，正确率 '+Math.round((snap.total-snap.wrong)/snap.total*100)+'%'):''));
+  if(snap.shenlun>0) res.matches.push('申论练笔 '+snap.shenlun+' 篇');
+  // —— 没做到 ——
+  if(snap.days<targetDays) res.gaps.push('学习天数 '+snap.days+'/'+targetDays+' 天（按每周节奏模板还差 '+(targetDays-snap.days)+' 天）');
+  if(snap.hours<hourTarget*0.8) res.gaps.push('总时长 '+snap.hours+'h，低于周目标的 80%（'+(hourTarget*0.8)+'h）');
+  if(snap.shenlun===0) res.gaps.push('本周还没写申论（主线科目，每周至少 1 篇）');
+  if(wp&&wp.topic.indexOf('申论')>=0&&snap.shenlun===0) res.gaps.push('本周主题就是「'+wp.topic+'」，需要抓紧');
+  // —— 归因（规则式：数据可推断的部分）——
+  if(snap.days<targetDays&&snap.hours>0){
+    var avg=snap.hours/snap.days;
+    res.reasons.push('单日均 '+Math.round(avg*10)/10+'h，'+(avg<1?'低于在职节奏（可能被工作挤占），建议把任务挪到周日/周一主力日':'节奏尚可，主要是天数不足')+'');
+  }
+  if(snap.total>0&&(snap.total-snap.wrong)/snap.total<0.5){
+    res.reasons.push('正确率低于 50%，可能当前题目难度偏高，建议退回基础题');
+  }
+  // —— 调整建议（触发规则：滞后/超前 → 具体动作）——
+  if(overall<60){
+    res.adjustments.push('本周完成度不足六成：保留主线（申论+资料+政治理论），本周数量/常识任务顺延到下周');
+    res.adjustments.push('下周目标下调 20%：申论 1 篇保底，主力日优先，轻量日可只做 15 分钟');
+  }else if(overall<85){
+    res.adjustments.push('接近达标：保持当前节奏，周日前把主线科目补齐即可');
+  }else{
+    res.adjustments.push('超前完成：可提前预习下周主题，或加 1 篇申论练笔');
+  }
+  if(snap.shenlun===0) res.adjustments.push('申论是当前最优先科目：下次主力日先写 1 篇（可传手写图让 AI 批改）');
+  res.encourage=overall>=85?'节奏很好，继续保持 🌱':overall>=60?'已经过半了，周末主力日冲一下就达标 💪':'别焦虑，先从今晚 30 分钟开始，比计划更重要的是别断 ✨';
+  return res;
+}
+
+function aiGapAnalysis(wk,snap,notes){
+  var plan=(window.KB_DATA&&window.KB_DATA.study_plan)||{};
+  var p=getTodayPlan();
+  var payload={
+    plan:{week:p.week,weekPlan:p.weekPlan,stage:(plan.stages||[]).map(function(s){return s.name+'('+s.range+'):'+s.goal;})},
+    actual:snap,
+    history:notes.slice(-3).map(function(n){return {date:n.date,learned:n.learned,errors:n.errors,adjust:n.adjust};}),
+    baseline:(plan.diagnosis||[])
+  };
+  var ruleRes=ruleGapAnalysis(wk,snap,notes);
+  openSheet('<div style="text-align:center;padding:24px 0"><div style="font-size:36px;margin-bottom:8px">🤖<\x2Fdiv><div style="font-size:14px;color:var(--ink2)">AI 正在分析你的计划执行情况…<br><span style="font-size:12px">（约10-30秒，失败时自动用规则分析兜底）<\x2Fspan><\x2Fdiv><\x2Fdiv>');
+  aiChat([
+    {role:'system',content:PROMPT_GAP},
+    {role:'user',content:JSON.stringify(payload)}
+  ],{max_tokens:4096,jsonMode:true}).then(function(txt){
+    var d;
+    try{ d=parseAIJSON(txt); }catch(pe){ d=ruleRes; toast('AI 输出异常，已用规则分析兜底'); }
+    if(!d||typeof d!=='object'||(!d.completion&&!d.gaps&&!d.matches)){ d=ruleRes; toast('AI 输出不完整，已用规则分析兜底'); }
+    d.adjustments=normalizeAdjustments(d.adjustments);
+    renderGapResult(wk,d);
+  }).catch(function(err){
+    toast('AI 不可用，已用规则分析（数据可靠）');
+    renderGapResult(wk,ruleRes);
+  });
+}
+/* 偏差结果渲染（AI 与规则引擎共用） */
+function renderGapResult(wk,d){
+  var body='';
+  body+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'
+    +'<span style="font-size:12px;color:var(--ink3)">W'+(wk||'?')+' · '+todayStr()+(d.byRule?' · 📐 规则引擎':' · 🤖 AI')+'<\x2Fspan>'
+    +'<span style="font-size:22px;font-weight:800;color:var(--gold-d)">'+esc(d.completion||'—')+'<\x2Fspan><\x2Fdiv>';
+  if(d.matches&&d.matches.length){
+    body+='<div class="rule-card"><h4>✓ 做到了<\x2Fh4>';
+    d.matches.forEach(function(s){ body+='<p style="margin-bottom:4px">· '+esc(s)+'<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  if(d.gaps&&d.gaps.length){
+    body+='<div class="rule-card rose"><h4>△ 没做到<\x2Fh4>';
+    d.gaps.forEach(function(s){ body+='<p style="margin-bottom:4px">· '+esc(s)+'<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  if(d.reasons&&d.reasons.length){
+    body+='<div class="rule-card"><h4>🔎 可能原因<\x2Fh4>';
+    d.reasons.forEach(function(s){ body+='<p style="margin-bottom:4px">· '+esc(s)+'<\x2Fp>'; });
+    body+='<\x2Fdiv>';
+  }
+  if(d.adjustments&&d.adjustments.length){
+    body+='<div class="rule-card gold"><h4>🔧 下周动态调整建议<\x2Fh4>';
+    d.adjustments.forEach(function(s){ body+='<p style="margin-bottom:5px;line-height:1.7">· '+esc(s)+'<\x2Fp>'; });
+    body+='<button class="btn btn-pri btn-block btn-sm" id="btn-adj-apply" style="margin-top:8px">📝 认可这些建议？转为正式调整<\x2Fbutton>';
+    body+='<\x2Fdiv>';
+  }
+  if(d.encourage) body+='<div style="text-align:center;font-size:13px;color:var(--green-d);font-weight:600;margin-top:10px">'+esc(d.encourage)+'<\x2Fdiv>';
+  body+='<div style="font-size:11px;color:var(--ink3);margin-top:10px;text-align:center">确认制：点上方按钮→可编辑→确认后，日历与今日计划立即显示新安排；不确认则维持原计划。<\x2Fdiv>';
+  openFull('计划偏差分析',body);
+  var applyBtn=$('btn-adj-apply');
+  if(applyBtn) applyBtn.addEventListener('click',function(){
+    confirmAdjustmentFlow(wk||getTodayPlan().week,d.adjustments);
+  });
+}
+
+/* ==================== 新手引导向导（首次打开 · 3步：目标→AI→完成） ==================== */
+function wizardDone(){ return !!lsGet('onboarded'); }
+function markOnboarded(){ lsSet('onboarded',{date:todayStr(),v:1}); }
+/* 目标考试选项（选完写入 studyPlanOverride，计划页优先读它） */
+var EXAM_OPTIONS=[
+  {k:'gk26', name:'2026 年国考', desc:'今年 11 月底笔试，以考代练积累经验', suggest:'2026-11-29'},
+  {k:'sk27', name:'2027 年省考', desc:'明年 3 月笔试，主攻目标', suggest:'2027-03-20'},
+  {k:'both', name:'国考练兵 + 省考决战', desc:'11月国考练手，3月省考全力冲刺（推荐）', suggest:'2027-03-20'},
+  {k:'custom', name:'其他时间', desc:'选这个后手动填日期', suggest:''}
+];
+function openWizard(){
+  var step=parseInt(lsGet('wizard_step')||'1',10);
+  var body='';
+  body+='<div style="text-align:center;margin-bottom:14px">'
+    +'<div style="font-size:40px">🌻</div>'
+    +'<div style="font-size:17px;font-weight:800">欢迎来到'+gardenName()+'</div>'
+    +'<div style="font-size:12px;color:var(--ink3);margin-top:4px">3 步完成初始设置（约 1 分钟）</div>'
+    +'<div style="display:flex;justify-content:center;gap:6px;margin-top:10px">'
+    +[1,2,3].map(function(i){ return '<span style="width:24px;height:5px;border-radius:3px;background:'+(i<=step?'var(--rose)':'var(--line)')+'"></span>'; }).join('')
+    +'</div></div>';
+  body+='<div style="text-align:center;margin-bottom:10px"><a href="javascript:void(0)" id="wiz-skip-top" style="font-size:12px;color:var(--ink3)">跳过，直接开始用 →</a></div>';
+
+  if(step===1){
+    body+='<div style="font-size:14px;font-weight:700;margin-bottom:10px">🌷 给你的花园起个名字（可选）</div>';
+    body+='<div class="field" style="margin-bottom:10px"><input class="input" id="wiz-gname" type="text" maxlength="12" placeholder="推荐：你的名字+小花园，如「倩倩小花园」（留空则叫上岸花园）"></div>';
+    body+='<div style="font-size:14px;font-weight:700;margin-bottom:10px">🎯 你的目标考试是？</div>';
+    EXAM_OPTIONS.forEach(function(o){
+      body+='<div data-exam="'+o.k+'" data-suggest="'+o.suggest+'" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;background:#fff">'
+        +'<div style="font-size:14px;font-weight:700">'+o.name+'</div>'
+        +'<div style="font-size:12px;color:var(--ink2);margin-top:2px">'+o.desc+'</div>'
+        +'</div>';
+    });
+    body+='<div id="wiz-custom" style="display:none;margin-bottom:8px"><div class="field"><label>目标考试日期（如 2027-03-20）</label>'
+      +'<input class="input" id="wiz-exam-date" type="date"></div></div>';
+    body+='<button class="btn btn-pri btn-block" id="wiz-next1" style="margin-top:8px" disabled>下一步</button>';
+    openSheet(body);
+    // 跳过链接：今天不再弹（而非永久标记，用户还可从设置里主动配置）
+    var skipTop=$('wiz-skip-top');
+    if(skipTop) skipTop.addEventListener('click',function(){
+      var v=lsGet('wizard_snooze')||{};
+      v.date=todayStr(); lsSet('wizard_snooze',v);
+      closeSheet(); toast('已跳过，设置入口在首页右上角 ⚙️');
+      navigate('home');
+    });
+    var chosen='';
+    document.querySelectorAll('[data-exam]').forEach(function(node){
+      node.addEventListener('click',function(){
+        document.querySelectorAll('[data-exam]').forEach(function(n){ n.style.borderColor='var(--line)'; n.style.background='#fff'; });
+        node.style.borderColor='var(--rose)'; node.style.background='var(--rose-l)';
+        chosen=node.getAttribute('data-exam');
+        $('wiz-custom').style.display = chosen==='custom' ? 'block' : 'none';
+        $('wiz-next1').disabled=false;
+        lsSet('wizard_exam',{k:chosen,suggest:node.getAttribute('data-suggest')});
+      });
+    });
+    $('wiz-next1').addEventListener('click',function(){
+      var gn=$('wiz-gname')?$('wiz-gname').value.trim():'';
+      if(gn){ lsSet('garden_name', gn.slice(0,12)); }
+      var we=lsGet('wizard_exam')||{};
+      if(we.k==='custom'){
+        var d=$('wiz-exam-date').value;
+        if(!d){ toast('选个日期'); return; }
+        we.suggest=d; lsSet('wizard_exam',we);
+      }
+      lsSet('wizard_step','2'); openWizard();
+    });
+  }
+  else if(step===2){
+    var has=aiReady();
+    body+='<div style="font-size:14px;font-weight:700;margin-bottom:6px">🔑 配置 AI（可选，强烈建议）</div>';
+    body+='<p style="font-size:12px;color:var(--ink2);line-height:1.8;margin-bottom:10px">AI 用于：<b>申论手写图识别、AI 批改打分、打卡截图自动填数、计划偏差分析</b>。<br>需要任意一家支持「OpenAI 接口格式」的大模型服务（智谱/DeepSeek/Kimi/通义…）。</p>';
+    body+='<div class="field"><label>① API Base URL（以智谱为例）</label>'
+      +'<input class="input" id="wiz-base" type="url" value="'+esc(getAICfg().base)+'"></div>';
+    body+='<div class="field"><label>② 模型名称</label>'
+      +'<input class="input" id="wiz-model" type="text" value="'+esc(getAICfg().model)+'"></div>';
+    body+='<div class="field"><label>③ API Key（'+(has?'已有，可跳过':'粘贴你的 Key')+'）</label>'
+      +'<input class="input" id="wiz-key" type="password" placeholder="智谱格式：32位.16位 共49字符"></div>';
+    body+='<p style="font-size:11px;color:var(--ink3);line-height:1.7;margin-bottom:10px">💡 智谱用户：open.bigmodel.cn 控制台 → API Keys → 创建并复制。Key 只存你自己浏览器，不上传任何服务器。</p>';
+    body+='<div style="display:flex;gap:8px">'
+      +'<button class="btn btn-pri" style="flex:1" id="wiz-ai-save">保存并验证</button>'
+      +'<button class="btn btn-ghost" id="wiz-ai-skip">稍后再说</button></div>'
+      +'<div id="wiz-ai-state" style="font-size:12px;color:var(--ink2);margin-top:8px;line-height:1.6"></div>';
+    openSheet(body);
+    $('wiz-ai-save').addEventListener('click',function(){
+      var base=$('wiz-base').value.trim(), model=$('wiz-model').value.trim(), key=$('wiz-key').value.trim();
+      if(!base||base.indexOf('http')!==0){ toast('Base URL 需 http 开头'); return; }
+      if(!model){ toast('填模型名'); return; }
+      if(!key && !has){ toast('填 Key 或点稍后再说'); return; }
+      lsSet('ai_cfg',{base:base,model:model});
+      if(key) lsSet('glm_api_key',key);
+      $('wiz-ai-state').textContent='验证中…';
+      aiChat([{role:'user',content:'回复：成功'}],{max_tokens:256}).then(function(){
+        $('wiz-ai-state').innerHTML=sanitizeHtml('<span style="color:var(--green-d)">✓ 验证成功！AI 功能已全部解锁</span>');
+        setTimeout(function(){ markOnboarded(); closeSheet(); toast('配置完成，欢迎开始 🌱'); navigate('home'); renderAll(); },1200);
+      }).catch(function(e){
+        $('wiz-ai-state').innerHTML=sanitizeHtml('<span style="color:var(--red)">✗ '+esc(String(e).slice(0,80))+'</span>（可检查后重试，或点稍后再说）');
+      });
+    });
+    $('wiz-ai-skip').addEventListener('click',function(){
+      markOnboarded(); closeSheet(); toast('已完成（AI 可随时在申论页配置）'); navigate('home'); renderAll();
+    });
+  }
+}
+/* 初始化时检查是否需要弹引导（延迟2.5s等数据加载完）
+   弹过条件：永久完成（onboarded）或今天已跳过（wizard_snooze） */
+function maybeShowWizard(){
+  if(wizardDone()) return;
+  var snooze=lsGet('wizard_snooze');
+  if(snooze && snooze.date===todayStr()) return;
+  setTimeout(function(){
+    if(wizardDone()) return;
+    var s2=lsGet('wizard_snooze');
+    if(s2 && s2.date===todayStr()) return;
+    openWizard();
+  }, 2500);
+}
+
+/* ==================== 微信通知（计划严重偏离提醒 · Server酱通道） ==================== */
+function notifyKey(){ return lsGet('notify_sckey')||''; }
+function notifyReady(){ return !!notifyKey(); }
+/* 发送：no-cors fire-and-forget（form-urlencoded 是 CORS 安全类型，服务端可正常解析） */
+function sendWxNotify(title,despMd){
+  var key=notifyKey();
+  if(!key) return Promise.resolve(false);
+  return fetch('https://sctapi.ftqq.com/'+encodeURIComponent(key)+'.send',{
+    method:'POST',mode:'no-cors',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'title='+encodeURIComponent(title.slice(0,32))+'&desp='+encodeURIComponent(despMd||'')
+  }).then(function(){ return true; }).catch(function(){ return false; });
+}
+/* 当日去重标记 */
+function notifyFlag(rule){
+  var f=lsGet('notify_sent')||{};
+  var t=todayStr();
+  if(f.date!==t){ f={date:t}; }
+  return !!f[rule];
+}
+function setNotifyFlag(rule){
+  var f=lsGet('notify_sent')||{};
+  var t=todayStr();
+  if(f.date!==t){ f={date:t}; }
+  f[rule]=1;
+  lsSet('notify_sent',f);
+}
+/* —— 检测规则（确定性，复用已有偏差引擎）——
+   A: 今日打卡后 comparePlanActual 为明显偏差(红)
+   B: 当前量化目标里 🔴差距大 的项 ≥2
+   未配置 key 时首次触发 → 每天只提示一次去配置 */
+function checkAndNotify(){
+  var severe=[];
+  try{
+    var p=getTodayPlan();
+    if(checkedToday()){
+      var cmp=comparePlanActual(todayStr(),p);
+      if(cmp.level==='red') severe.push('A');
+    }
+    var gg=(typeof goalGapSummary==='function')?goalGapSummary():null;
+    if(gg){
+      var farCnt=gg.items.filter(function(it){ return it.g.st==='far'; }).length;
+      if(farCnt>=2) severe.push('B');
+    }
+  }catch(e){ return; }
+  if(!severe.length) return;
+  // 组装消息
+  var lines=[];
+  severe.forEach(function(r){
+    if(r==='A') lines.push('- 今日打卡与计划**明显偏差**（时长差>1h或内容跑偏），纠偏建议见工作台首页');
+    if(r==='B'){
+      var gg2=goalGapSummary();
+      var parts=(gg2?gg2.items:[]).filter(function(it){ return it.g.st==='far'; }).slice(0,3)
+        .map(function(it){ return it.label+' '+goalLineText(it); });
+      if(parts.length) lines.push('- 量化目标落后：'+parts.join('、')+'（'+(gg2?gg2.date:'')+'目标）');
+    }
+  });
+  if(!lines.length) return;
+  var title=gardenName()+'：学习计划偏离提醒';
+  var desp='**今天是 '+todayStr()+'**\n\n'+lines.join('\n\n')+'\n\n> 别慌，打开工作台看「纠偏二选一」，补主线即可。';
+  if(!notifyReady()){
+    // 未配置：每天提示一次去配置（不打扰）
+    if(!notifyFlag('hint')){ setNotifyFlag('hint'); toast('检测到计划明显偏离，可在「申论-配置」里开启微信提醒'); }
+    return;
+  }
+  var flag=severe.join('_');
+  if(notifyFlag(flag)) return;   // 当天同类提醒只发一次
+  setNotifyFlag(flag);
+  sendWxNotify(title,desp).then(function(ok){ if(ok) toast('📩 微信提醒已发送'); });
+}
+/* 通知设置面板 */
+function openNotifySettings(){
+  var has=notifyReady();
+  var body='';
+  body+='<h3 style="margin-bottom:6px">🔔 微信提醒（Server酱）</h3>';
+  body+='<p style="font-size:13px;color:var(--ink2);margin-bottom:12px;line-height:1.7">当计划明显偏离（打卡纠偏红色 / 量化目标两项以上落后）时，自动发微信提醒你。每天同类最多提醒一次，不骚扰。</p>';
+  body+='<div class="field"><label>SendKey（官网 <a href="https://sct.ftqq.com" target="_blank" style="color:var(--gold-d);text-decoration:underline">sct.ftqq.com</a> 用微信扫码登录，首页复制 SendKey 粘贴到这里）</label>';
+  body+='<input class="input" id="nt-key-input" type="password" placeholder="粘贴 Server酱 SendKey"></div>';
+  body+='<div style="display:flex;gap:8px"><button class="btn btn-pri" style="flex:1" id="nt-key-save">保存</button>'
+    +(has?'<button class="btn btn-ghost" id="nt-key-test">发测试消息</button><button class="btn btn-ghost" id="nt-key-clear">清除</button>':'')
+    +'<button class="btn btn-ghost" data-sf-close>取消</button></div>';
+  body+='<div id="nt-state" style="font-size:12px;color:var(--ink2);margin-top:10px"></div>';
+  openSheet(body);
+  $('nt-key-save').addEventListener('click',function(){
+    var v=$('nt-key-input').value.trim();
+    if(!v){ toast('先粘贴 SendKey'); return; }
+    lsSet('notify_sckey',v);
+    $('nt-state').textContent='已保存 ✓ 明天起检测到偏离会自动提醒；可点「发测试消息」验证通道';
+    renderNotifyEntries();
+  });
+  var tb=$('nt-key-test');
+  if(tb) tb.addEventListener('click',function(){
+    $('nt-state').textContent='测试消息发送中…';
+    sendWxNotify(gardenName()+'：通知通道测试','如果你在微信里看到这条消息，说明提醒通道已打通 ✅').then(function(){
+      $('nt-state').textContent='已发出（no-cors 无法读取回执）：请看微信「Server酱」服务号消息，收到即配置成功';
+    });
+  });
+  var cb=$('nt-key-clear');
+  if(cb) cb.addEventListener('click',function(){
+    lsDel('notify_sckey'); toast('已清除'); closeSheet();
+  });
+}
+/* 复盘中心/设置里的入口行刷新 */
+function renderNotifyEntries(){
+  var el=$('nt-entry-state');
+  if(el) el.textContent=notifyReady()?'🔔 微信提醒：已开启':'🔔 微信提醒：未开启（检测到偏离时会提示）';
+}
+
+/* ==================== 计划调整层（数据流：基础JSON + 调整记录 → 界面实时叠加） ==================== */
+/* 结构：{date:'确认日', week:W号, changes:[{type:'reduce'|'add'|'replace', target:'W9', text:'...'}], fromAI:bool}
+   存 localStorage(plan_adjustments) + 云端任务清单表备份(任务=[计划调整]/状态=已确认) */
+function getAdjustments(){ return sanitizeAdjustments(lsGet('plan_adjustments')); }
+function activeAdjustment(week){
+  var list=getAdjustments();
+  for(var i=list.length-1;i>=0;i--){ if(!list[i].week || list[i].week===week) return list[i]; }
+  return null;
+}
+function saveAdjustment(adj){
+  adj={date:String(adj.date||'').slice(0,10),week:(typeof adj.week==='number')?adj.week:null,fromAI:!!adj.fromAI,
+       changes:(Array.isArray(adj.changes)?adj.changes:[]).filter(function(c){return c&&typeof c.text==='string'&&c.text.trim();})
+         .map(function(c){return {type:String(c.type||'ai'),text:c.text.slice(0,200)};})};
+  if(adj.changes.length===0){ toast('调整内容为空，未保存'); return false; }
+  var list=getAdjustments();
+  list.push(adj);
+  try{ lsSet('plan_adjustments',list); }catch(x){ toast('本地存储失败'); return false; }
+  // 云端备份（fire-and-forget）
+  if(state.online && typeof addTaskRecord==='function'){
+    addTaskRecord({
+      '任务':{text:'[计划调整W'+(adj.week||'?')+'] '+adj.changes.map(function(c){return c.text;}).join('；').slice(0,180)},
+      '日期':{date:adj.date},
+      '模块':{select:optId('task_module','复盘')},
+      '状态':{select:optId('task_status','复盘')}
+    },{record_id:'adj_'+Date.now(),任务:'[计划调整]',日期:adj.date+'T00:00:00Z',模块:'复盘',状态:'复盘'});
+  }
+  return true;
+}
+/* AI 建议一键转「待确认草稿」→ 用户编辑确认后保存 → 界面立即重渲染 */
+/* manual=true 时不带 AI 建议，用户自己从零写（AI 不合理时走这条路） */
+function confirmAdjustmentFlow(week,aiAdjustments,manual){
+  aiAdjustments=normalizeAdjustments(aiAdjustments);
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink3);margin-bottom:10px">'+(manual?'自己写一条计划调整：写清楚改什么、怎么改，确认后界面立即更新（可随时在「调整记录」里撤销）。':'把 AI 建议转成本周的正式调整。下面的文字【可以直接改】——删掉不认可的行、改成你要的说法，再确认。')+'</div>';
+  body+='<div class="field"><label>调整内容（可编辑，删掉你不认可的）</label>';
+  body+='<textarea class="input" id="adj-text" rows="4" style="resize:vertical;line-height:1.7">';
+  (aiAdjustments||[]).forEach(function(a,i){ body+=(i?'\n':'')+a; });
+  body+='</textarea></div>';
+  body+='<div class="field"><label>生效范围</label><select class="select" id="adj-scope"><option value="0">从本周起持续生效</option><option value="'+week+'">仅 W'+week+' 本周</option></select></div>';
+  body+='<div style="display:flex;gap:8px"><button class="btn btn-pri" style="flex:1" id="adj-confirm">✓ 确认调整（界面立即更新）</button><button class="btn btn-ghost" data-sf-close>取消</button></div>';
+  openSheet(body);
+  $('adj-confirm').addEventListener('click',function(){
+    var txt=$('adj-text').value.trim();
+    if(!txt){ toast(manual?'写点内容再确认':'内容已清空——全不认可就点取消，或改写后再确认'); return; }
+    var scope=$('adj-scope').value;
+    var lines=txt.split('\n').filter(function(l){return l.trim();}).map(function(l){return l.trim().replace(/^[-·•]\s*/,'');});
+    var ok=saveAdjustment({date:todayStr(),week:scope==='0'?null:parseInt(scope,10),changes:lines.map(function(l){return {type:'ai',text:l};}),fromAI:true});
+    if(ok){ closeSheet(); toast('✓ 调整已生效，界面已更新'); renderAll(); }
+  });
+}
+/* 判断某天是否受激活调整影响（供日历/今日计划显示标记） */
+function adjustmentForDate(ds){
+  var wk=planWeekNum(ds);
+  return activeAdjustment(wk);
+}
+/* 撤销某条调整（界面立即恢复原计划） */
+function revokeAdjustment(idx){
+  var list=getAdjustments();
+  if(idx<0||idx>=list.length) return;
+  list.splice(idx,1);
+  lsSet('plan_adjustments',list);
+  renderAll();
+  openAdjustmentManager();
+  toast('已撤销，界面已恢复');
+}
+/* 调整记录管理：查看全部 + 撤销 + 手动新增 */
+function openAdjustmentManager(){
+  var list=getAdjustments();
+  var body='';
+  body+='<div style="font-size:12px;color:var(--ink3);margin-bottom:10px">共 '+list.length+' 条调整。同周多条时按最新的生效；撤销后界面立即恢复原计划。</div>';
+  if(list.length){
+    list.slice().reverse().forEach(function(a,ri){
+      var idx=list.length-1-ri;
+      body+='<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'
+        +'<span class="tag" style="background:#F1EAF8;color:#6B4FA0">'+esc(a.date)+'确认</span>'
+        +'<span style="font-size:11px;color:var(--ink3)">'+(a.week?('仅 W'+a.week):(a.fromAI?'AI建议 · 持续生效':'手动 · 持续生效'))+'</span>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--ink2);line-height:1.8">';
+      a.changes.forEach(function(c){ body+='· '+esc(c.text)+'<br>'; });
+      body+='</div>'
+        +'<button class="btn btn-ghost btn-sm" data-adjrevoke="'+idx+'" style="margin-top:6px;color:var(--red)">撤销这条</button>'
+        +'</div>';
+    });
+  }else{
+    body+='<div class="empty">还没有调整记录，计划按原始版本执行</div>';
+  }
+  body+='<button class="btn btn-pri btn-block" id="btn-adj-new" style="margin-top:6px">✍️ 自己写一条调整（不经过AI）</button>';
+  openFull('计划调整记录',body);
+  var nb=$('btn-adj-new');
+  if(nb) nb.addEventListener('click',function(){ confirmAdjustmentFlow(null,[],true); });
+  document.querySelectorAll('[data-adjrevoke]').forEach(function(node){
+    node.addEventListener('click',function(){
+      revokeAdjustment(parseInt(node.getAttribute('data-adjrevoke'),10));
+    });
+  });
+}
+
+/* ==================== 渲染层：打卡页 ==================== */
+function renderCheckin(){
+  renderCkCategories();
+  renderCkWrongTags();
+  renderCheckinHistory();
+}
+/* 学习内容标签（两级 + 自定义） */
+function renderCkCategories(){
+  var el=$('ck-categories');
+  var cats=getAllCategories();   // 含用户自定义
+  if(cats.length===0){
+    el.innerHTML=sanitizeHtml('<div class="empty">分类数据未加载<\x2Fdiv>');
+    return;
+  }
+  var html='';
+  cats.forEach(function(c){
+    var catOn=state.ckSelected.indexOf(c.key)>=0;
+    var html2='';
+    (c.children||[]).forEach(function(ch){
+      var on=state.ckSelected.indexOf(ch.key)>=0;
+      html2+='<button class="tag-btn'+(on?' on':'')+'" data-cksub="'+ch.key+'">'+esc(ch.name)+'<\x2Fbutton>';
+    });
+    // 自定义标签按钮（每个大类下都有）
+    html2+='<button class="tag-btn tag-custom" data-ckcustom="'+c.key+'">＋ 自定义<\x2Fbutton>';
+    html+='<div class="cat-block'+(catOn?' on':'')+'" style="border-left-color:'+(c.color||'#6F9E4F')+'">'
+      +'<button class="cat-btn'+(catOn?' on':'')+'" data-ckcat="'+c.key+'">'+esc(c.name)+'<\x2Fbutton>'
+      +'<div class="sub-tags">'+html2+'<\x2Fdiv>'
+      +'<\x2Fdiv>';
+  });
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* 获取分类（含用户自定义标签） */
+function getAllCategories(){
+  var cats=(window.KB_DATA.categories.categories||[]).map(function(c){ return c; });
+  // 合并用户自定义标签（localStorage 持久化）
+  var custom=lsGet('custom_categories')||{};
+  cats.forEach(function(c){
+    if(custom[c.key] && custom[c.key].length){
+      var names=custom[c.key];
+      c.children=(c.children||[]).slice();
+      names.forEach(function(nm){
+        var key=c.key+'_custom_'+hash(nm);
+        c.children.push({key:key,name:nm,custom:true});
+      });
+    }
+  });
+  return cats;
+}
+function hash(s){ var h=0,i; for(i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return Math.abs(h); }
+/* 错题集中标签（基于已选学习内容） */
+function renderCkWrongTags(){
+  var el=$('ck-wrong-tags');
+  var cats=getAllCategories();
+  // 只显示已选学习内容下的二级标签
+  var html='';
+  var anySelected=state.ckSelected.length>0;
+  if(!anySelected){
+    html='<div style="font-size:12px;color:var(--ink3);padding:8px 0">先在上方选学习内容，这里会自动出现对应考点标签<\x2Fdiv>';
+  }else{
+    var shown=0;
+    cats.forEach(function(c){
+      var catOn=state.ckSelected.indexOf(c.key)>=0;
+      c.children.forEach(function(ch){
+        var subOn=state.ckSelected.indexOf(ch.key)>=0;
+        if(catOn || subOn){
+          var on=state.ckWrongSelected.indexOf(ch.key)>=0;
+          html+='<button class="tag-btn'+(on?' on':'')+'" data-ckwrong="'+ch.key+'">'+esc(ch.name)+'<\x2Fbutton>';
+          shown++;
+        }
+      });
+    });
+    if(!shown){ html='<div style="font-size:12px;color:var(--ink3);padding:8px 0">无对应考点标签<\x2Fdiv>'; }
+    else{
+      html+='<div style="font-size:12px;color:var(--ink3);padding:8px 0 2px">👇 点标签后，在下面填该考点的题量和错题数（可只填部分）</div>';
+    }
+  }
+  el.innerHTML=sanitizeHtml(html);
+  renderCkWrongQty();   // 联动数量输入区（选完标签自动出现）
+}
+/* 错题标签 → 数量输入区 + 汇总（联动渲染） */
+function renderCkWrongQty(){
+  var el=$('ck-wrong-qty');
+  if(!el) return;
+  var html='';
+  var picked=state.ckWrongSelected;
+  if(picked.length===0){
+    html='<div style="font-size:12px;color:var(--ink3);padding:6px 0">还没选错题考点。选了之后，这里会出现每个考点的题量/错题输入框，并自动汇总本次打卡数据。</div>';
+  }else{
+    picked.forEach(function(key){
+      var q=(state.ckWrongQty[key]||{});
+      html+='<div class="wrong-qty-row" data-wq="'+key+'" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;background:#fff;flex-wrap:wrap">'
+        +'<div style="flex:1;min-width:90px;font-size:13px;font-weight:600">'+esc(subName(key))+'</div>'
+        +'<label style="font-size:12px;color:var(--ink2);flex:none">题量</label>'
+        +'<input class="input" type="number" min="0" step="1" inputmode="numeric" data-wqtotal="'+key+'" value="'+(q.total!=null?esc(String(q.total)):'')+'" placeholder="0" style="width:72px;padding:7px 8px;font-size:14px">'
+        +'<label style="font-size:12px;color:var(--ink2);flex:none">错题</label>'
+        +'<input class="input" type="number" min="0" step="1" inputmode="numeric" data-wqwrong="'+key+'" value="'+(q.wrong!=null?esc(String(q.wrong)):'')+'" placeholder="0" style="width:72px;padding:7px 8px;font-size:14px">'
+        +'</div>';
+    });
+    html+='<div id="ck-wrong-sum"></div>';
+  }
+  el.innerHTML=sanitizeHtml(html);
+  refreshWrongQtySum();
+}
+/* 只刷新汇总条（输入时不整区重绘，避免输入框失焦） */
+function refreshWrongQtySum(){
+  var el=$('ck-wrong-sum');
+  if(!el) return;
+  var s=wrongQtySummary();
+  if(!s){ el.innerHTML=sanitizeHtml('<div style="font-size:12px;color:var(--ink3);padding:6px 0 2px">填了题量/错题后会在这里自动汇总 ✏️</div>'); return; }
+  el.innerHTML=sanitizeHtml('<div style="margin-top:6px;padding:10px 12px;background:var(--green-l);border-radius:10px;font-size:13px;line-height:1.7">'
+    +'🧮 本次自动汇总：总题量 <b>'+s.total+'</b> 题 · 错题 <b>'+s.wrong+'</b> 题 · '+(s.rate!=null?('错误率 <b>'+s.rate+'%</b>'):'未填题量')
+    +(s.parts.length?('<br><span style="font-size:12px;color:var(--ink2)">'+s.parts.join(' ｜ ')+'</span>'):'')
+    +'</div>');
+}
+/* 汇总所有已填数量的错题标签：{total,wrong,rate,parts:[...]}，全部为空返回 null */
+function wrongQtySummary(){
+  var total=0,wrong=0,filled=0,parts=[];
+  var cats=getAllCategories();
+  state.ckWrongSelected.forEach(function(key){
+    var q=state.ckWrongQty[key]||{};
+    var t=num(q.total),w=num(q.wrong);
+    if(t!=null||w!=null){
+      if(t==null)t=0; if(w==null)w=0;
+      filled++;
+      total+=t; wrong+=w;
+      var rate=t>0?Math.round((t-w)/t*100):null;
+      parts.push(esc(subName(key))+' '+t+'题/错'+w+(rate!=null?('（正确率'+rate+'%）'):''));
+    }
+  });
+  if(!filled) return null;
+  var rate=total>0?Math.round((total-wrong)/total*1000)/10:null;
+  return {total:total,wrong:wrong,rate:rate,parts:parts};
+}
+/* 错题标签汇总 → 所属一级模块聚合（用于学习记录表分模块写入） */
+function wrongQtyByCat(){
+  var map={};   // {catName:{total,wrong}}
+  state.ckWrongSelected.forEach(function(key){
+    var q=state.ckWrongQty[key]||{};
+    var t=num(q.total),w=num(q.wrong);
+    if(t==null && w==null) return;
+    if(t==null)t=0; if(w==null)w=0;
+    var catKey=key.indexOf('_')>=0?key.slice(0,key.indexOf('_')):key;
+    var cat=findCategory(catKey);
+    var nm=cat?cat.name:'其他';
+    if(!map[nm]) map[nm]={total:0,wrong:0};
+    map[nm].total+=t; map[nm].wrong+=w;
+  });
+  return map;
+}
+function renderCheckinHistory(){
+  var el=$('ck-history');
+  var list=state.checkin.slice(0,7);
+  if(list.length===0){ el.innerHTML=sanitizeHtml('<div class="empty">还没有打卡记录<\x2Fdiv>'); return; }
+  var html='';
+  list.forEach(function(c){
+    var d=String(c['日期']||'').slice(0,10);
+    html+='<div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:13px">'
+      +'<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
+      +'<span style="font-weight:600">'+esc(d)+' · '+esc(c['心情']||'')+'<\x2Fspan>'
+      +'<span style="color:var(--green-d);font-weight:700">'+(num(c['学习时长'])||0)+'h<\x2Fspan><\x2Fdiv>'
+      +'<div style="color:var(--ink2);font-size:12px">'+esc(c['今日收获']||'')+'<\x2Fdiv><\x2Fdiv>';
+  });
+  el.innerHTML=sanitizeHtml(html);
+}
+
+/* ==================== 渲染层：数据页 ==================== */
+function renderData(){
+  renderModuleChart();
+  var stats=moduleStats();
+  $('data-acc-chart').innerHTML=sanitizeHtml(stats.length?barChart(stats,{target:80}):'<div class="empty">暂无学习数据，先去打卡记录吧<\x2Fdiv>');
+  renderWeak();
+  renderDonut();
+}
+/* 各模块学习量分布（题量条形图） */
+function renderModuleChart(){
+  var el=$('data-module-chart');
+  var map={};
+  state.study.forEach(function(s){
+    var m=s['模块']; if(!m) return;
+    map[m]=(map[m]||0)+(num(s['题量'])||0);
+  });
+  var rows=[];
+  var colors={'政治理论':'#6F9E4F','常识判断':'#8FB36A','言语理解':'#E79BB5','判断推理':'#D9869B','数量关系':'#E86A32','资料分析':'#D4A94E','申论':'#B98A2F','时事政治':'#7A9BB5'};
+  for(var k in map){ if(map[k]>0) rows.push({name:k,v:map[k],color:colors[k]||'#6F9E4F'}); }
+  rows.sort(function(a,b){ return b.v-a.v; });
+  if(rows.length===0){ el.innerHTML=sanitizeHtml('<div class="empty">暂无数据<\x2Fdiv>'); return; }
+  // 题量条形图
+  var maxV=Math.max.apply(null,rows.map(function(r){return r.v;}));
+  var W=620,H=Math.max(160,rows.length*40+40),L=80,R=60,T=10,B=30;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%">';
+  rows.forEach(function(r,i){
+    var y=T+i*(H-T-B)/rows.length;
+    var bh=(H-T-B)/rows.length-12;
+    var bw=(W-L-R)*r.v/maxV;
+    s+='<text x="'+(L-8)+'" y="'+(y+bh/2+4)+'" font-size="12" fill="#4A3B2A" text-anchor="end">'+esc(r.name)+'<\x2Ftext>';
+    s+='<rect x="'+L+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="6" fill="'+r.color+'" opacity=".9"/>';
+    s+='<text x="'+(L+bw+6)+'" y="'+(y+bh/2+4)+'" font-size="12" fill="#4A3B2A" font-weight="700">'+r.v+'题<\x2Ftext>';
+  });
+  s+='<\x2Fsvg>';
+  el.innerHTML=sanitizeHtml(s);
+}
+function renderWeak(){
+  var stats=moduleStats();
+  if(stats.length===0){ $('data-weak').innerHTML=sanitizeHtml('<div class="empty">暂无数据<\x2Fdiv>'); return; }
+  var sorted=stats.slice().sort(function(a,b){ return a.v-b.v; });
+  var top3=sorted.slice(0,3);
+  var html='';
+  top3.forEach(function(r,i){
+    var color=i===0?'var(--red)':i===1?'var(--orange)':'var(--gold-d)';
+    html+='<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)">'
+      +'<div style="width:28px;height:28px;border-radius:50%;background:'+color+';color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;flex:none">'+(i+1)+'<\x2Fdiv>'
+      +'<div style="flex:1"><div style="font-weight:600">'+esc(r.name)+'<\x2Fdiv><div style="font-size:12px;color:var(--ink2)">正确率 '+Math.round(r.v)+'%，建议加练<\x2Fdiv><\x2Fdiv>'
+      +'<div style="font-size:18px;font-weight:800;color:'+color+'">'+Math.round(r.v)+'%<\x2Fdiv><\x2Fdiv>';
+  });
+  $('data-weak').innerHTML=sanitizeHtml(html);
+}
+function renderDonut(){
+  var map={};
+  state.study.forEach(function(s){
+    var m=s['模块']; if(!m) return;
+    var h=num(s['用时分钟'])||0;
+    if(!map[m]) map[m]=0;
+    map[m]+=h/60;
+  });
+  var colors={'政治理论':'#6F9E4F','常识判断':'#8FB36A','言语理解':'#E79BB5','判断推理':'#D9869B','数量关系':'#E86A32','资料分析':'#D4A94E','申论':'#B98A2F','时事政治':'#7A9BB5'};
+  var parts=[];
+  for(var k in map){ parts.push({name:k,v:Math.round(map[k]*10)/10,c:colors[k]||'#6F9E4F'}); }
+  var html=donutChart(parts);
+  html+='<div style="margin-top:10px">';
+  parts.forEach(function(p){ html+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin:3px 0"><span style="width:10px;height:10px;border-radius:50%;background:'+p.c+'"><\x2Fspan>'+esc(p.name)+' '+p.v+'h<\x2Fdiv>'; });
+  html+='<\x2Fdiv>';
+  $('data-donut').innerHTML=sanitizeHtml(html);
+}
+
+function openSheet(html){
+  var m=$('mask'); m.classList.add('on');
+  var s=$('sheet'); s.classList.remove('full');
+  s.innerHTML=sanitizeHtml(html);
+}
+/* 全屏详情：标题 + 正文铺满整屏 */
+function openFull(title,bodyHtml){
+  var m=$('mask'); m.classList.add('on');
+  var s=$('sheet'); s.classList.add('full');
+  s.innerHTML=sanitizeHtml(
+    '<div class="sf-head">'
+    +'<div class="back" data-sf-close="1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><\x2Fsvg><\x2Fdiv>'
+    +'<div class="tt">'+esc(title)+'<\x2Fdiv>'
+    +'<div class="sp"><\x2Fdiv><\x2Fdiv>'
+    +'<div class="sf-body">'+bodyHtml+'<\x2Fdiv>'
+  );
+}
+function closeSheet(){
+  $('mask').classList.remove('on');
+  $('sheet').classList.remove('full');
+}
+
+/* 暴露 */
+window.renderAffairs=renderAffairs; window.openAffair=openAffair;
+window.affairCollapsed=affairCollapsed;
+window.renderEssay=renderEssay; window.renderEssayTabs=renderEssayTabs; window.renderEssayList=renderEssayList;
+window.openEssayTopic=openEssayTopic; window.openEssayMat=openEssayMat;
+window.renderEssayPractice=renderEssayPractice; window.renderEssayTools=renderEssayTools;
+window.openPracticeEditor=openPracticeEditor; window.openPracticeResult=openPracticeResult;
+window.scoreShenlun=scoreShenlun; window.extractCoreTerms=extractCoreTerms;
+window.aiChat=aiChat; window.aiVision=aiVision; window.aiReady=aiReady; window.openAISettings=openAISettings;
+window.parseAIJSON=parseAIJSON; window.PROMPT_OCR=PROMPT_OCR; window.PROMPT_GRADE=PROMPT_GRADE; window.PROMPT_CHECKIN=PROMPT_CHECKIN;
+window.openReviewCenter=openReviewCenter; window.isReviewDay=isReviewDay;
+window.getAdjustments=getAdjustments; window.activeAdjustment=activeAdjustment; window.saveAdjustment=saveAdjustment; window.confirmAdjustmentFlow=confirmAdjustmentFlow;
+window.revokeAdjustment=revokeAdjustment; window.openAdjustmentManager=openAdjustmentManager;
+window.normalizeAdjustments=normalizeAdjustments; window.sanitizeAdjustments=sanitizeAdjustments;
+window.openSettingsHub=openSettingsHub; window.openGardenNameSettings=openGardenNameSettings;
+window.openBackfill=openBackfill; window.strictNum=strictNum;
+window.openWizard=openWizard; window.maybeShowWizard=maybeShowWizard;
+window.sendWxNotify=sendWxNotify; window.checkAndNotify=checkAndNotify; window.openNotifySettings=openNotifySettings; window.notifyReady=notifyReady;
+window.ruleGapAnalysis=ruleGapAnalysis; window.renderGapResult=renderGapResult;
+window.weekSnapshot=weekSnapshot; window.aiGapAnalysis=aiGapAnalysis; window.getReviewNotes=getReviewNotes; window.PROMPT_GAP=PROMPT_GAP;
+window.renderCheckin=renderCheckin; window.renderCheckinHistory=renderCheckinHistory;
+window.renderCkCategories=renderCkCategories; window.renderCkWrongTags=renderCkWrongTags;
+window.renderCkWrongQty=renderCkWrongQty; window.wrongQtySummary=wrongQtySummary; window.wrongQtyByCat=wrongQtyByCat; window.refreshWrongQtySum=refreshWrongQtySum;
+window.renderData=renderData; window.openSheet=openSheet; window.openFull=openFull; window.closeSheet=closeSheet;
+</script>

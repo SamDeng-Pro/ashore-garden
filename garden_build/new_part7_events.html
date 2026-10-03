@@ -1,0 +1,700 @@
+<script>
+/* ==================== 路由 ==================== */
+var ROUTE_TITLES={home:'上岸花园',plan:'全年计划',affairs:'时事政治',essay:'申论专题',garden:'我的花园',checkin:'打卡',data:'数据详情','garden-help':'花园说明'};
+/* 应用花园名到所有界面位置（title/topbar/品牌/路由首页名） */
+function applyGardenName(){
+  var n=(typeof gardenName==='function')?gardenName():'上岸花园';
+  document.title=n+' · 考公工作台';
+  var brand=$('brand-name'); if(brand) brand.textContent='🌷 '+n;
+  ROUTE_TITLES.home=n;
+  var tt=$('topbar-title');
+  if(tt && state.route && state.route!=='home'){ tt.textContent=ROUTE_TITLES[state.route]||n; }
+}
+function navigate(route){
+  state.route=route;
+  var pages=document.querySelectorAll('.page');
+  for(var i=0;i<pages.length;i++){ pages[i].classList.remove('on'); }
+  var target=$('page-'+route);
+  if(target) target.classList.add('on');
+  // 底部 tab 高亮
+  var tabs=document.querySelectorAll('.tabbar .tab');
+  var tabKeys=['home','plan','affairs','essay','garden','checkin'];
+  for(i=0;i<tabs.length;i++){
+    tabs[i].classList.toggle('on', tabKeys[i]===route);
+  }
+  // 顶部返回键：非首页显示
+  var topbar=$('topbar');
+  if(route==='home'){ topbar.classList.add('hidden'); }
+  if(typeof applyGardenName==='function') applyGardenName();
+  else{ topbar.classList.remove('hidden'); $('topbar-title').textContent=ROUTE_TITLES[route]||'上岸花园'; }
+  // 渲染目标页
+  if(route==='home') renderHome();
+  else if(route==='plan') renderPlan();
+  else if(route==='affairs') renderAffairs();
+  else if(route==='essay') renderEssay();
+  else if(route==='garden') renderGarden();
+  else if(route==='checkin') renderCheckin();
+  else if(route==='data') renderData();
+  else if(route==='garden-help') renderGardenHelp();
+  // 离开首页停止阳光雨
+  if(route!=='home' && typeof stopSunRain==='function') stopSunRain();
+  window.scrollTo(0,0);
+}
+
+/* ==================== 事件委托 ==================== */
+function bindEvents(){
+  // 底部导航 + data-nav 元素
+  document.addEventListener('click',function(e){
+    var navEl=e.target&&e.target.closest?e.target.closest('[data-nav]'):null;
+    if(navEl){ navigate(navEl.getAttribute('data-nav')); return; }
+    // 复盘中心入口
+    var revEl=e.target&&e.target.closest?e.target.closest('[data-navreview]'):null;
+    if(revEl){ openReviewCenter(); return; }
+  });
+
+  // 返回键
+  $('btn-back').addEventListener('click',function(){ navigate('home'); });
+
+  // 打卡：一级分类点选
+  $('ck-categories').addEventListener('click',function(e){
+    var b=e.target.closest('[data-ckcat]');
+    if(b){ toggleCkCat(b.getAttribute('data-ckcat')); return; }
+    var c=e.target.closest('[data-cksub]');
+    if(c){ toggleCkSub(c.getAttribute('data-cksub')); return; }
+    var cu=e.target.closest('[data-ckcustom]');
+    if(cu){ promptCustomTag(cu.getAttribute('data-ckcustom')); }
+  });
+
+  // 打卡：错题集中标签点选
+  $('ck-wrong-tags').addEventListener('click',function(e){
+    var c=e.target.closest('[data-ckwrong]');
+    if(c){ toggleCkWrong(c.getAttribute('data-ckwrong')); }
+  });
+
+  // 打卡：错题考点数量输入（事件委托，只更新数据+汇总条，不重绘输入框防失焦）
+  $('ck-wrong-qty').addEventListener('input',function(e){
+    var t=e.target.getAttribute('data-wqtotal');
+    var w=e.target.getAttribute('data-wqwrong');
+    var key=t||w;
+    if(!key) return;
+    if(!state.ckWrongQty[key]) state.ckWrongQty[key]={};
+    if(t) state.ckWrongQty[key].total=e.target.value;
+    if(w) state.ckWrongQty[key].wrong=e.target.value;
+    refreshWrongQtySum();
+  });
+
+  // 申论 tab
+  $('essay-tabs').addEventListener('click',function(e){
+    var b=e.target.closest('[data-essaytab]');
+    if(b){ state.essayTab=b.getAttribute('data-essaytab'); renderEssay(); }
+  });
+  // 申论列表点击
+  $('essay-list').addEventListener('click',function(e){
+    var t=e.target.closest('[data-essayopen]');
+    if(t){ openEssayTopic(parseInt(t.getAttribute('data-essayopen'))); return; }
+    var m=e.target.closest('[data-essaymat]');
+    if(m){ openEssayMat(parseInt(m.getAttribute('data-essaymat'))); }
+  });
+
+  // 时政列表点击
+  $('affairs-list').addEventListener('click',function(e){
+    // 日期组头：展开/收起
+    var dh=e.target.closest('[data-affairdate]');
+    if(dh){
+      var d=dh.getAttribute('data-affairdate');
+      affairCollapsed[d]=!affairCollapsed[d];
+      renderAffairs();
+      return;
+    }
+    var t=e.target.closest('[data-affairoopen]');
+    if(t){ openAffair(parseInt(t.getAttribute('data-affairoopen'))); }
+  });
+
+  // 时政分类筛选
+  $('affairs-filter').addEventListener('click',function(e){
+    var c=e.target.closest('[data-affaircat]');
+    if(c){ state.affairCat=c.getAttribute('data-affaircat'); renderAffairs(); }
+  });
+
+  // 花园：点击花盆放大
+  $('garden-grid').addEventListener('click',function(e){
+    var p=e.target.closest('[data-pot]');
+    if(p){ openPlot(p.getAttribute('data-pot')); }
+  });
+
+  // 计划页日历：月份切换 + 日期详情
+  document.addEventListener('click',function(e){
+    var nav=e.target&&e.target.closest?e.target.closest('[data-calnav]'):null;
+    if(nav){
+      var dir=parseInt(nav.getAttribute('data-calnav'),10);
+      var d=new Date(state.calY,state.calM+dir,1);
+      state.calY=d.getFullYear(); state.calM=d.getMonth();
+      renderPlan();
+      return;
+    }
+    var day=e.target&&e.target.closest?e.target.closest('[data-calday]'):null;
+    if(day){ openCalDayDetail(day.getAttribute('data-calday')); }
+    // 调整记录管理
+    var am=e.target&&e.target.closest?e.target.closest('[data-adjmgr]'):null;
+    if(am){ openAdjustmentManager(); }
+  });
+
+  // 设置中心入口（顶栏齿轮 + 首页⚙️设置）
+  $('btn-settings').addEventListener('click',openSettingsHub);
+  var hs=$('home-settings');
+  if(hs) hs.addEventListener('click',openSettingsHub);
+
+  // 模态关闭（含全屏详情的返回按钮）
+  $('mask').addEventListener('click',function(e){
+    // 新手向导未完成时点遮罩关闭 = 今天不再弹（避免每次打开都骚扰）
+    if(e.target===this && !wizardDone() && $('sheet').innerHTML.indexOf('欢迎来到')>=0){
+      var v=lsGet('wizard_snooze')||{}; v.date=todayStr(); lsSet('wizard_snooze',v);
+    }
+    if(e.target===this) closeSheet();
+    var c=e.target.closest('[data-sf-close]');
+    if(c) closeSheet();
+  });
+
+  // 打卡：添加照片（选图即存 IndexedDB 防丢失）
+  $('ck-add-photo').addEventListener('click',function(){ $('ck-file').click(); });
+  $('ck-file').addEventListener('change',function(e){
+    var files=e.target.files;
+    for(var i=0;i<files.length && state.photos.length<9;i++){
+      var f=files[i];
+      var key='ph_'+Date.now()+'_'+i;
+      idbPut(key,f);
+      var reader=new FileReader();
+      reader.onload=(function(file,k){
+        return function(ev){ state.photos.push({file:file,key:k,dataUrl:ev.target.result}); renderPhotos(); };
+      })(f,key);
+      reader.readAsDataURL(f);
+    }
+    e.target.value='';
+  });
+
+  // 打卡表单输入缓存（debounce）
+  ['ck-total','ck-wrong','ck-hours','ck-note'].forEach(function(id){
+    $(id).addEventListener('input',function(){ cacheFormInput('checkin',id,$(id).value); });
+  });
+
+  // 打卡提交
+  $('btn-ck-submit').addEventListener('click',submitCheckin);
+
+  // 打卡：AI 截图识别（刷题APP截图 → 自动填题量/错题数）
+  $('btn-ck-scan').addEventListener('click',function(){ $('ck-scan-file').click(); });
+  $('ck-scan-file').addEventListener('change',function(e){
+    var f=e.target.files[0]; if(!f) return;
+    var st=$('ck-scan-state');
+    if(!aiReady()){
+      st.innerHTML=sanitizeHtml('<a href="javascript:void(0)" id="ck-ai-setup" style="color:var(--gold-d)">需先配置 AI Key，点这里设置</a>');
+      var s2=$('ck-ai-setup');
+      if(s2) s2.addEventListener('click',openAISettings);
+      e.target.value='';
+      return;
+    }
+    st.textContent='AI 识别中…';
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      aiVision(ev.target.result,PROMPT_CHECKIN,1024).then(function(txt){
+        var d=parseAIJSON(txt);
+        if(!d.found){ st.textContent='未识别到学习数据，请手动填写'; return; }
+        if(d.total!=null) $('ck-total').value=d.total;
+        if(d.wrong!=null) $('ck-wrong').value=d.wrong;
+        // AI 识别到模块/考点时，自动选中对应错题标签并预填数量（若用户已选了考点）
+        if(d.module){
+          var aiCat=findCategoryByName(String(d.module));
+          if(aiCat && state.ckSelected.indexOf(aiCat)<0){ toggleCkCat(aiCat); }
+        }
+        refreshWrongQtySum();
+        if(d.note) st.textContent='✓ 已识别：'+(d.module||'')+(d.sub?('·'+d.sub):'')+' '+d.total+'题'+(d.wrong!=null?(' 错'+d.wrong):'')+'（请核对）';
+        else st.textContent='✓ 已识别部分数据，请核对';
+        toast('识别完成，请核对数字');
+      }).catch(function(err){
+        st.textContent='识别失败：'+String(err).slice(0,40);
+      });
+    };
+    reader.readAsDataURL(f);
+    e.target.value='';
+  });
+
+  // 数据页按钮
+  $('btn-export').addEventListener('click',exportJSON);
+  $('btn-import').addEventListener('click',function(){ $('import-file').click(); });
+  $('import-file').addEventListener('change',importJSON);
+  $('btn-resync').addEventListener('click',function(){ loadData().then(function(){ toast('已同步'); renderAll(); }); });
+  $('btn-clear-demo').addEventListener('click',clearDemo);
+}
+
+/* ==================== 打卡标签点选 ==================== */
+function toggleCkCat(catKey){
+  // 点一级分类：选中/取消该一级及其所有二级
+  var idx=state.ckSelected.indexOf(catKey);
+  if(idx>=0){
+    // 取消该一级及所属二级
+    state.ckSelected=state.ckSelected.filter(function(k){ return k!==catKey && k.indexOf(catKey+'_')!==0; });
+  }else{
+    state.ckSelected.push(catKey);
+    // 默认选中该一级下所有二级（用户可再取消单个）
+    var cat=findCategory(catKey);
+    if(cat){ cat.children.forEach(function(c){ if(state.ckSelected.indexOf(c.key)<0) state.ckSelected.push(c.key); }); }
+  }
+  renderCkCategories();
+  syncWrongTags();
+  renderCkWrongTags();   // 联动：错题标签区+数量输入区随已选内容刷新（N1 修复）
+}
+function toggleCkSub(subKey){
+  var idx=state.ckSelected.indexOf(subKey);
+  if(idx>=0){ state.ckSelected.splice(idx,1); }
+  else{ state.ckSelected.push(subKey); }
+  renderCkCategories();
+  syncWrongTags();
+  renderCkWrongTags();   // 联动刷新
+}
+
+/* 自定义标签：输入新的二级考点，持久化并立即选中 */
+function promptCustomTag(catKey){
+  var cat=findCategory(catKey);
+  if(!cat) return;
+  openSheet('<h3 style="margin-bottom:6px">新增「'+esc(cat.name)+'」考点<\x2Fh3>'
+    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:12px">输入一个你常用的细分考点，将作为标签记录，方便后续统计。<\x2Fp>'
+    +'<input class="input" id="custom-tag-input" placeholder="如：图形推理-六面体" maxlength="20">'
+    +'<div style="display:flex;gap:8px;margin-top:14px">'
+    +'<button class="btn btn-pri" style="flex:1" id="custom-tag-ok">保存并选中<\x2Fbutton>'
+    +'<button class="btn btn-ghost" id="custom-tag-cancel">取消<\x2Fbutton><\x2Fdiv>');
+  $('custom-tag-ok').addEventListener('click',function(){
+    var name=$('custom-tag-input').value.trim();
+    if(!name){ toast('先输入标签名'); return; }
+    saveCustomTag(catKey,name);
+    closeSheet();
+    toast('已添加「'+name+'」');
+  });
+  $('custom-tag-cancel').addEventListener('click',closeSheet);
+  setTimeout(function(){ var i=$('custom-tag-input'); if(i) i.focus(); },60);
+}
+/* 保存自定义标签到 localStorage */
+function saveCustomTag(catKey,name){
+  var custom=lsGet('custom_categories')||{};
+  if(!custom[catKey]) custom[catKey]=[];
+  if(custom[catKey].indexOf(name)<0){ custom[catKey].push(name); }
+  lsSet('custom_categories',custom);
+  // 立即选中该自定义标签
+  var key=catKey+'_custom_'+hash(name);
+  if(state.ckSelected.indexOf(key)<0){ state.ckSelected.push(key); }
+  // 同时把一级分类也标记选中
+  if(state.ckSelected.indexOf(catKey)<0){ state.ckSelected.push(catKey); }
+  renderCkCategories();
+  syncWrongTags();
+  renderCkWrongTags();   // 联动刷新（自定义标签也出现在错题区）
+}
+function toggleCkWrong(subKey){
+  var idx=state.ckWrongSelected.indexOf(subKey);
+  if(idx>=0){ state.ckWrongSelected.splice(idx,1); }
+  else{ state.ckWrongSelected.push(subKey); }
+  renderCkWrongTags();
+}
+function findCategory(key){
+  var cats=getAllCategories();
+  for(var i=0;i<cats.length;i++){ if(cats[i].key===key) return cats[i]; }
+  return null;
+}
+/* 同步错题标签：只在已选学习内容范围内可选 */
+function syncWrongTags(){
+  var valid={};
+  state.ckSelected.forEach(function(k){ valid[k]=1; });
+  state.ckWrongSelected=state.ckWrongSelected.filter(function(k){ return valid[k]; });
+  // 清掉已不可选考点的数量数据
+  for(var k in state.ckWrongQty){ if(!valid[k]) delete state.ckWrongQty[k]; }
+}
+
+/* ==================== 做题记录（自动写入学习记录表） ==================== */
+function recordStudy(props,local){
+  addStudyRecord(props,local).then(function(){
+    state.study.unshift(local);
+  });
+}
+
+/* ==================== 打卡提交 ==================== */
+function submitCheckin(){
+  var hours=num($('ck-hours').value);
+  var mood=$('ck-mood').value;
+  var note=$('ck-note').value.trim();
+  var total=num($('ck-total').value);
+  var wrong=num($('ck-wrong').value);
+
+  if(state.ckSelected.length===0){ toast('先点选今天学了什么内容'); return; }
+  if(hours==null || hours<=0){ toast('填一下学习时长（小时）'); return; }
+  if(checkedToday()){ toast('今天已经打过卡啦，明天再来'); return; }
+  // 错题明细校验：每个考点错题数不能超过题量
+  var wqKeys=state.ckWrongSelected.filter(function(k){ var q=state.ckWrongQty[k]||{}; return num(q.total)!=null||num(q.wrong)!=null; });
+  for(var wi=0;wi<wqKeys.length;wi++){
+    var wq=state.ckWrongQty[wqKeys[wi]]||{};
+    var t=num(wq.total),w=num(wq.wrong);
+    if(t!=null&&t<0||w!=null&&w<0){ toast('数量不能为负数'); return; }
+    if(t!=null&&w!=null&&w>t){ toast('「'+subName(wqKeys[wi])+'」的错题数不能大于题量'); return; }
+  }
+  // 顶部汇总 vs 明细加总校验（都填了才校验，避免误伤）
+  if(total!=null && wqKeys.length){
+    var s=wrongQtySummary();
+    if(s && s.total!==total){ toast('汇总对不上：顶部总题量 '+total+'，各考点明细加总 '+s.total+'，请核对'); return; }
+  }
+  var beforeHours=totalHours();   // 打卡前累计时长（用于鼓励弹框判断）
+  var btn=$('btn-ck-submit'); btn.disabled=true; btn.textContent='提交中...';
+
+  // 汇总所选标签 -> 一级模块名列表 + 二级名列表
+  var catKeys=state.ckSelected.filter(function(k){ return k.indexOf('_')<0; });
+  var subKeys=state.ckSelected.filter(function(k){ return k.indexOf('_')>=0; });
+  var catNames=catKeys.map(function(k){ var c=findCategory(k); return c?c.name:k; });
+  var subNames=subKeys.map(function(k){ return subName(k); });
+  // 错题考点数量 -> 按一级模块聚合（分模块写学习记录表的数据来源）
+  var qtyByCat=wrongQtyByCat();
+  // 明细未填时兜底：顶部汇总平摊到所选一级模块（前 n-1 个 floor，最后一个吃余数，保证加总=原值）
+  if(!Object.keys(qtyByCat).length && total!=null){
+    var n=catNames.length||1;
+    var base=Math.floor(total/n), rem=total-base*n;
+    var wBase=wrong!=null?Math.floor(wrong/n):0, wRem=wrong!=null?wrong-wBase*n:0;
+    catNames.forEach(function(m,i){
+      qtyByCat[m]={total:base+(i===n-1?rem:0),wrong:(wrong!=null?(wBase+(i===n-1?wRem:0)):0)};
+    });
+  }
+
+  // 上传图片
+  var photos=state.photos.slice();
+  var files=photos.map(function(p){ return p.file; });
+  Promise.all(files.map(uploadOne)).then(function(images){
+    images=images.filter(function(x){ return x; });
+    var props={
+      '日期':{date:todayStr()},
+      '学习时长':{number:hours},
+      '心情':{select:optId('checkin_mood',mood)}
+    };
+    var noteText='';
+    if(catNames.length) noteText+='模块：'+catNames.join('、');
+    if(subNames.length) noteText+='；考点：'+subNames.join('、');
+    if(total!=null) noteText+='；做题'+total+'道';
+    if(wrong!=null) noteText+='；错'+wrong+'道';
+    if(wqKeys.length){
+      noteText+='；错题分布：'+wqKeys.map(function(k){
+        var q=state.ckWrongQty[k]||{};
+        return subName(k)+(q.total!=null?(q.total+'题'):'')+(q.wrong!=null?('错'+q.wrong):'');
+      }).join('、');
+    }
+    if(note) noteText+='；备注：'+note;
+    if(noteText){ props['今日收获']={text:noteText}; }
+
+    if(images.length){ props['证据图片']={image:{images:images}}; }
+
+    var local={record_id:'local_'+Date.now(),日期:todayStr()+'T00:00:00Z',学习时长:hours,心情:mood,今日收获:noteText};
+    return addCheckinRecord(props,local).then(function(okCk){
+      // addRecordTo 离线降级时已写入 state/localStorage（返回 false）；云端成功才需手动 unshift，避免翻倍
+      if(okCk){ state.checkin.unshift(local); lsSet('checkin',state.checkin); }
+      // 同步写入学习记录表（统计数据主要来源）
+      // 数据只来自错题考点的数量明细（按一级模块聚合），避免"整体一条+明细一条"题量翻倍
+      var catArr=Object.keys(qtyByCat).length?Object.keys(qtyByCat):catNames;
+      var writes=catArr.map(function(m){
+        var q=qtyByCat[m]||{total:0,wrong:0};
+        var sp={
+          '日期':{date:todayStr()},
+          '模块':{select:optId('study_module',m)},
+          '类型':{select:optId('study_type','打卡记录')},
+          '题量':{number:q.total||0},
+          '错题数':{number:q.wrong||0},
+          '用时分钟':{number:Math.round(hours*60/catArr.length)},
+          '备注':{text:noteText||'打卡记录'}
+        };
+        var lp={record_id:'local_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),日期:todayStr()+'T00:00:00Z',模块:m,类型:'打卡记录',题量:q.total||0,错题数:q.wrong||0,用时分钟:Math.round(hours*60/catArr.length),备注:noteText||'打卡记录'};
+        return addStudyRecord(sp,lp).then(function(okSt){ if(okSt){ state.study.unshift(lp); } });
+      });
+      return Promise.all(writes).then(function(){
+        // 全部写完再刷新，保证统计读到的就是本次数据
+        $('ck-total').value=''; $('ck-wrong').value=''; $('ck-hours').value=''; $('ck-note').value='';
+        clearFormCache('checkin');
+        state.photos.forEach(function(p){ idbDelete(p.key); });
+        state.photos=[]; renderPhotos();
+        state.ckSelected=[]; state.ckWrongSelected=[]; state.ckWrongQty={};
+        renderCkCategories(); renderCkWrongTags();
+        btn.disabled=false; btn.textContent='提交打卡 · 自动浇水';
+        petalRain();
+        toast(checkinFeedback(hours),true);
+        renderAll();
+        if(typeof checkAndNotify==='function') setTimeout(checkAndNotify,1500);
+        // 鼓励弹框（若跨越阶段/开花）
+        celebrateAfterCheckin(beforeHours, totalHours());
+      });
+    });
+  }).catch(function(){
+    btn.disabled=false; btn.textContent='提交打卡 · 自动浇水';
+    toast('提交失败，请重试');
+  });
+}
+
+function subName(key){
+  var cats=getAllCategories();
+  for(var i=0;i<cats.length;i++){
+    for(var j=0;j<cats[i].children.length;j++){
+      if(cats[i].children[j].key===key) return cats[i].children[j].name;
+    }
+  }
+  return key;
+}
+/* 按模块名称找 key（AI 识图结果 -> 标签联动用） */
+function findCategoryByName(name){
+  var cats=getAllCategories();
+  for(var i=0;i<cats.length;i++){
+    if(cats[i].name===name || String(name).indexOf(cats[i].name)>=0) return cats[i].key;
+  }
+  return null;
+}
+
+function checkinFeedback(hours){
+  var h=totalHours();
+  var cur=currentGrowingFlower(h);
+  var s='已记录 '+hours+' 小时，累计 '+Math.round(h*10)/10+' 小时 💧';
+  if(cur){
+    var nextName = cur.stage===STAGE_SEED?'萌芽':(cur.stage===STAGE_SPROUT?'开花':'绽放');
+    s+=' 「'+cur.name+'」还差 '+cur.hoursLeft+' 小时'+nextName;
+  }else if(totalFlowers()>0){
+    s+=' 所有花都开了，太棒了！';
+  }
+  return s;
+}
+
+/* ==================== 鼓励弹框 ==================== */
+/* 打卡后调用：根据打卡前后累计时长，判断是否跨越阶段/开花，弹出鼓励 */
+var _lastFlowerState=null;
+function captureFlowerState(){ _lastFlowerState=flowerProgress(); }
+function celebrateAfterCheckin(beforeHours, afterHours){
+  // beforeHours: 打卡前累计时长；afterHours: 打卡后累计时长
+  var crossed=[];
+  var before=Math.max(0,beforeHours), after=afterHours;
+  var beforeFlowers=Math.floor(before/FLOWER_TOTAL_HOURS);
+  var afterFlowers=Math.floor(after/FLOWER_TOTAL_HOURS);
+
+  // 1) 是否开出了新花（跨过 16h 整数倍）
+  if(afterFlowers>beforeFlowers){
+    for(var n=beforeFlowers;n<afterFlowers && n<VAR_ORDER.length;n++){
+      var v=VARIETIES[VAR_ORDER[n]];
+      crossed.push({type:'bloom', name:v.name, bloom:v.bloom});
+    }
+  }
+  // 2) 当前正在成长的花，是否跨过了阶段边界（种子2h→萌芽、再4h→开花期）
+  var cur=currentGrowingFlower(after);
+  if(cur){
+    var local=after - Math.floor(after/FLOWER_TOTAL_HOURS)*FLOWER_TOTAL_HOURS;
+    var beforeLocal=before - Math.floor(before/FLOWER_TOTAL_HOURS)*FLOWER_TOTAL_HOURS;
+    // 判断是否刚刚跨过 2h（种子→萌芽）
+    if(beforeLocal<STAGE_HOURS[0] && local>=STAGE_HOURS[0]){ crossed.push({type:'sprout', name:cur.name}); }
+    // 判断是否刚刚跨过 6h（萌芽→开花期）
+    var sproutEnd=STAGE_HOURS[0]+STAGE_HOURS[1];
+    if(beforeLocal<sproutEnd && local>=sproutEnd && local<FLOWER_TOTAL_HOURS){ crossed.push({type:'blooming', name:cur.name}); }
+  }
+
+  if(crossed.length===0){
+    // 没有跨阶段，但检查是否「临近」下一阶段（还差 ≤1h），给提前鼓励
+    var curNear=currentGrowingFlower(after);
+    if(curNear && !curNear.done && curNear.hoursLeft>0 && curNear.hoursLeft<=1){
+      var nxtN = curNear.stage===STAGE_SEED?'萌芽':(curNear.stage===STAGE_SPROUT?'开花':'绽放');
+      var html2='<div style="text-align:center;padding:8px 0">'
+        +'<div style="font-size:52px;margin-bottom:8px">🔥<\x2Fdiv>'
+        +'<h3 style="margin-bottom:6px">就差一点点啦！<\x2Fh3>'
+        +'<p style="color:var(--ink2);font-size:14px">「'+esc(curNear.name)+'」还差 '+curNear.hoursLeft+' 小时就'+(curNear.stage===STAGE_SEED?'进入萌芽期':(curNear.stage===STAGE_SPROUT?'进入开花期':'完全绽放'))+'了，加油哦！<\x2Fp>'
+        +'<\x2Fdiv>'
+        +'<button class="btn btn-pri btn-block" data-sf-close style="margin-top:8px">好，继续加油！<\x2Fbutton>';
+      openSheet(html2);
+    }
+    return;
+  }
+
+  // 构建弹框内容
+  var html='<div style="text-align:center;padding:8px 0">';
+  html+='<div style="font-size:52px;margin-bottom:8px">'+(crossed[0].type==='bloom'?'🌼':'🌱')+'<\x2Fdiv>';
+  crossed.forEach(function(c){
+    if(c.type==='bloom'){
+      html+='<h3 style="margin-bottom:6px">🎉 新花绽放：'+esc(c.name)+'！<\x2Fh3>'
+        +'<p style="color:var(--ink2);font-size:14px">'+esc(c.bloom)+'<\x2Fp>';
+    }else if(c.type==='sprout'){
+      html+='<h3 style="margin-bottom:6px">🌱 发芽啦！<\x2Fh3>'
+        +'<p style="color:var(--ink2);font-size:14px">「'+esc(c.name)+'」已经破土萌芽，继续加油，还差 '+STAGE_HOURS[1]+' 小时就能进入开花期！<\x2Fp>';
+    }else if(c.type==='blooming'){
+      html+='<h3 style="margin-bottom:6px">🌷 花苞绽放中！<\x2Fh3>'
+        +'<p style="color:var(--ink2);font-size:14px">「'+esc(c.name)+'」进入开花期啦，再坚持 '+STAGE_HOURS[2]+' 小时就能完全绽放！<\x2Fp>';
+    }
+  });
+  // 附上「下一朵」提示
+  var afterCur=currentGrowingFlower(after);
+  if(afterCur && afterCur.hoursLeft>0){
+    html+='<p style="font-size:12px;color:var(--ink3);margin-top:8px">下一朵等你解锁的花是「'+esc(afterCur.name)+'」，加油哦 💪<\x2Fp>';
+  }
+  html+='<\x2Fdiv>';
+  html+='<button class="btn btn-pri btn-block" data-sf-close style="margin-top:8px">太棒了，继续加油！<\x2Fbutton>';
+  openSheet(html);
+}
+
+/* ==================== 照片渲染 ==================== */
+function renderPhotos(){
+  var grid=$('ck-photos');
+  var html='';
+  state.photos.forEach(function(p,idx){
+    html+='<div class="photo"><img src="'+p.dataUrl+'"><div class="del" data-delphoto="'+idx+'">×<\x2Fdiv><\x2Fdiv>';
+  });
+  if(state.photos.length<9){ html+='<div class="photo add" id="ck-add-photo">＋<\x2Fdiv>'; }
+  grid.innerHTML=sanitizeHtml(html);
+  if(state.photos.length<9){ $('ck-add-photo').addEventListener('click',function(){ $('ck-file').click(); }); }
+  grid.querySelectorAll('[data-delphoto]').forEach(function(el){
+    el.addEventListener('click',function(){
+      var i=parseInt(el.getAttribute('data-delphoto'));
+      state.photos.splice(i,1); renderPhotos();
+    });
+  });
+}
+
+/* ==================== 花瓣雨 ==================== */
+function petalRain(){
+  var chars=['🌸','🌺','🌼','🌷','💮'];
+  for(var i=0;i<18;i++){
+    (function(){
+      var p=document.createElement('div');
+      p.className='petal';
+      p.textContent=chars[Math.floor(Math.random()*chars.length)];
+      p.style.left=(Math.random()*100)+'%';
+      p.style.fontSize=(14+Math.random()*14)+'px';
+      p.style.animationDuration=(2.5+Math.random()*2.5)+'s';
+      p.style.animationDelay=(Math.random()*1.5)+'s';
+      document.body.appendChild(p);
+      setTimeout(function(){ p.remove(); },6000);
+    })();
+  }
+}
+
+/* ==================== 导出导入 ==================== */
+function exportJSON(){
+  var d={study:state.study,task:state.task,checkin:state.checkin,bf_mocks:lsGet('bf_mocks')||[],exportedAt:new Date().toISOString()};
+  var blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=gardenName()+'备份_'+todayStr()+'.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast('已导出备份');
+}
+function importJSON(e){
+  var file=e.target.files[0]; if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(){
+    var d; try{ d=JSON.parse(reader.result); }catch(x){ toast('文件格式不对'); return; }
+    var n=(d.study||[]).length+(d.task||[]).length+(d.checkin||[]).length;
+    if(n===0){ toast('文件里没有数据'); return; }
+    (d.study||[]).forEach(function(s){ state.study.push(s); });
+    (d.task||[]).forEach(function(t){ state.task.push(t); });
+    (d.checkin||[]).forEach(function(c){ state.checkin.push(c); });
+    if((d.bf_mocks||[]).length){ lsSet('bf_mocks',(lsGet('bf_mocks')||[]).concat(d.bf_mocks)); }
+    lsSet('study',state.study); lsSet('task',state.task); lsSet('checkin',state.checkin);
+    renderAll();
+    toast('已导入 '+n+' 条数据');
+  };
+  reader.readAsText(file);
+  e.target.value='';
+}
+
+/* ==================== 清空示例 ==================== */
+function clearDemo(){
+  openSheet('<h3 style="margin-bottom:10px">确认清空示例数据？<\x2Fh3><p style="font-size:14px;color:var(--ink2);margin-bottom:16px">将删除所有带【示例】标记的数据，真实数据不受影响。<\x2Fp>'
+    +'<button class="btn btn-rose btn-block" id="confirm-clear">确认清空<\x2Fbutton>'
+    +'<button class="btn btn-ghost btn-block" style="margin-top:8px" id="cancel-clear">取消<\x2Fbutton>');
+  $('confirm-clear').addEventListener('click',function(){
+    state.study=state.study.filter(function(s){ return String(s['备注']||'').indexOf('【示例】')<0; });
+    state.task=state.task.filter(function(t){ return String(t['任务']||'').indexOf('【示例】')<0; });
+    state.checkin=state.checkin.filter(function(c){ return String(c['今日收获']||'').indexOf('【示例】')<0; });
+    lsSet('study',state.study); lsSet('task',state.task); lsSet('checkin',state.checkin);
+    closeSheet(); renderAll(); toast('示例数据已清空');
+  });
+  $('cancel-clear').addEventListener('click',closeSheet);
+}
+
+/* ==================== 统一刷新 ==================== */
+function renderAll(){
+  renderHome();
+  if(state.route==='plan') renderPlan();
+  else if(state.route==='affairs') renderAffairs();
+  else if(state.route==='essay') renderEssay();
+  else if(state.route==='garden') renderGarden();
+  else if(state.route==='checkin') renderCheckin();
+  else if(state.route==='data') renderData();
+}
+
+/* ==================== 初始化 ==================== */
+function $(id){ return document.getElementById(id); }
+
+document.addEventListener('DOMContentLoaded',function(){
+  initIcons();
+  bindEvents();
+  renderPhotos();
+  renderCkCategories();
+  renderCkWrongTags();
+  // 恢复表单缓存
+  restoreFormCache('checkin',function(d){
+    if(d['ck-total']) $('ck-total').value=d['ck-total'];
+    if(d['ck-wrong']) $('ck-wrong').value=d['ck-wrong'];
+    if(d['ck-hours']) $('ck-hours').value=d['ck-hours'];
+    if(d['ck-note']) $('ck-note').value=d['ck-note'];
+  });
+  loadSchemas().then(function(){
+    return loadData();
+  }).then(function(){
+    // 基线导入：线上/离线都要保证有真实基线（检查 study 里有没有「历史基线」记录）
+    var hasBaseline=state.study.some(function(s){ return String(s['类型']||'')==='历史基线' || String(s['备注']||'').indexOf('【真实基线】')>=0; });
+    if(!hasBaseline){
+      seedDemoData();
+      // state.study 已被 seedDemoData 填充，直接本地展示；云端写入由 seedDemoData 内部处理
+    }
+    navigate('home');
+    if(typeof checkAndNotify==='function') setTimeout(checkAndNotify,2000);
+    if(typeof maybeShowWizard==='function') maybeShowWizard();
+    if(typeof applyGardenName==='function') applyGardenName();
+    var st=$('sync-state');
+    if(st) st.textContent = state.online?'☁️ 已连接云端，数据自动同步':'📴 离线模式，数据保存在本地浏览器';
+  });
+});
+
+/* 首次种子数据。
+   开源版：默认为空基线（新用户从 0 开始，用「设置 → 历史数据补录」录入自己的历史数据）。
+   进阶用法：如需批量预置基线，可在浏览器控制台执行 GARDEN_PRIVATE_BASELINE=[...] 后刷新。
+   私有数据不进 git / 不进线上产物。 */
+var GARDEN_PRIVATE_BASELINE=null;   // ← 个人数据在此注入（开源发布时保持 null）
+function seedDemoData(){
+  var BASE_DATE='2026-10-01';
+  var baseline=GARDEN_PRIVATE_BASELINE||[];
+  if(baseline.length===0){
+    lsSet('baseline_synced',true);   // 空基线也标记为已处理，避免重复走种子逻辑
+    return;
+  }
+  state.study=baseline.map(function(b,i){
+    var note='【真实基线】'+b.mod+(b.sub?('·'+b.sub):'')+' 累计'+b.t+'题对'+b.r+'题';
+    return {record_id:'base_'+i,日期:BASE_DATE+'T00:00:00Z',模块:b.mod,类型:'历史基线',题量:b.t,错题数:b.t-b.r,用时分钟:0,备注:note};
+  }).concat(state.study);   // 基线在前，已有记录保留在后
+  lsSet('study',state.study);
+  // 云端可用时逐条写入（仅首次；写入失败不影响本地展示）
+  if(state.online && state.db && !lsGet('baseline_synced')){
+    lsSet('baseline_synced',true);
+    baseline.forEach(function(b){
+      addStudyRecord({
+        '日期':{date:BASE_DATE},
+        '模块':{select:optId('study_module',b.mod)},
+        '类型':{select:optId('study_type','历史基线')},
+        '题量':{number:b.t},
+        '错题数':{number:b.t-b.r},
+        '用时分钟':{number:0},
+        '备注':{text:'【真实基线】'+b.mod+(b.sub?('·'+b.sub):'')+' 累计'+b.t+'题对'+b.r+'题'}
+      },{record_id:'base_'+Math.random().toString(36).slice(2,8),日期:BASE_DATE+'T00:00:00Z',模块:b.mod,类型:'历史基线',题量:b.t,错题数:b.t-b.r,用时分钟:0,备注:''});
+    });
+  }
+}
+
+/* 暴露 */
+window.navigate=navigate; window.renderAll=renderAll; window.petalRain=petalRain;
+window.toggleCkCat=toggleCkCat; window.toggleCkSub=toggleCkSub; window.toggleCkWrong=toggleCkWrong;
+window.promptCustomTag=promptCustomTag; window.saveCustomTag=saveCustomTag;
+window.getAllCategories=getAllCategories; window.findCategory=findCategory; window.subName=subName; window.findCategoryByName=findCategoryByName;
+window.hash=hash;
+window.celebrateAfterCheckin=celebrateAfterCheckin; window.captureFlowerState=captureFlowerState;
+window.GARDEN_PRIVATE_BASELINE=GARDEN_PRIVATE_BASELINE;
+</script>

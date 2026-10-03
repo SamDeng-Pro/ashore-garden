@@ -1,0 +1,444 @@
+<script>
+/* ==================== SVG 图形库 ==================== */
+/* --- 图标 --- */
+function iconSvg(name){
+  var p='';
+  switch(name){
+    case 'back': p='<path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'; break;
+    case 'home': p='<path d="M4 11l8-7 8 7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M6 10v9h12v-9" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M10 19v-5h4v5" stroke="currentColor" stroke-width="1.8" fill="none"/>'; break;
+    case 'quiz': p='<rect x="5" y="4" width="14" height="16" rx="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M9 9h6M9 12h6M9 15h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'; break;
+    case 'flower': p='<circle cx="12" cy="14" r="3" fill="currentColor"/><ellipse cx="12" cy="7" rx="3" ry="4.2" fill="currentColor" opacity=".85"/><ellipse cx="8" cy="10" rx="3" ry="4.2" fill="currentColor" opacity=".85" transform="rotate(72 12 14)"/><ellipse cx="16" cy="10" rx="3" ry="4.2" fill="currentColor" opacity=".85" transform="rotate(-72 12 14)"/>'; break;
+    case 'essay': p='<path d="M6 4h9l3 3v13H6z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><path d="M15 4v4h4" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M9 11h6M9 14h6M9 17h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'; break;
+    case 'news': p='<rect x="4" y="5" width="16" height="14" rx="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 9h8M8 12h8M8 15h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'; break;
+    case 'check': p='<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M8 12.5l3 3 5-6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'; break;
+    case 'sun': p='<circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'; break;
+    case 'clock': p='<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 7v5l3.5 2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>'; break;
+    case 'calendar': p='<rect x="4" y="5.5" width="16" height="14.5" rx="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M4 10h16M8.5 3.5v3.5M15.5 3.5v3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 13.5h2.5M13.5 13.5H16M8 17h2.5M13.5 17H16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'; break;
+    default: p='<circle cx="12" cy="12" r="8" fill="currentColor"/>';
+  }
+  return '<svg viewBox="0 0 24 24" width="24" height="24" fill="none">'+p+'<\x2Fsvg>';
+}
+function initIcons(){
+  var els=document.querySelectorAll('[data-ic]');
+  for(var i=0;i<els.length;i++){ els[i].innerHTML=sanitizeHtml(iconSvg(els[i].getAttribute('data-ic'))); }
+}
+
+/* --- 花卉 SVG（全阶段，含花盆） --- */
+function flowerSVG(variety,stage,w,h){
+  var v=VARIETIES[variety]||VARIETIES.rose_red;
+  w=w||84; h=h||100;
+  var s='<svg viewBox="0 0 84 100" width="'+w+'" height="'+h+'">';
+  s+='<path d="M22 90q20 8 40 0l0 5-40 0z" fill="#D9C9A8"/><path d="M22 90q20 8 40 0" fill="#E8DCC4"/>';
+  if(stage===0){
+    s+='<ellipse cx="42" cy="84" rx="6" ry="9" fill="#B98A4A" stroke="#854F0B" stroke-width="0.6"/>';
+  }else{
+    var stemEnd=stage===1?72:stage===2?58:stage===3?48:40;
+    s+='<line x1="42" y1="92" x2="42" y2="'+stemEnd+'" stroke="#639922" stroke-width="2.2" stroke-linecap="round"/>';
+    if(stage===1){ s+=leaf(33,80,-32)+leaf(51,82,32); }
+    if(stage>=2){ s+=leaf(33,80,-32)+leaf(51,82,32)+leaf(34,68,-38)+leaf(50,70,38); }
+    if(stage===3){
+      s+='<ellipse cx="42" cy="'+(stemEnd-8)+'" rx="7" ry="10" fill="#97C459" stroke="#3B6D11" stroke-width="0.6"/>';
+      s+='<circle cx="42" cy="'+(stemEnd-15)+'" r="3.5" fill="'+v.petal+'" stroke="'+v.stroke+'" stroke-width="0.6"/>';
+    }
+    if(stage>=4){
+      var cy=stage===4?stemEnd-10:stemEnd-12;
+      if(v.type==='rose'){
+        if(stage===4){
+          s+=petalRing(42,cy,5,11,-9,5,20,v.petal,v.stroke);
+          s+='<circle cx="42" cy="'+cy+'" r="4.5" fill="'+v.inner+'" stroke="'+v.stroke+'" stroke-width="0.6"/>';
+        }else{
+          s+=petalRing(42,cy,6.5,13,-10,8,0,v.petal,v.stroke);
+          s+=petalRing(42,cy,4.5,9,-6,4,45,v.inner,v.stroke);
+          s+='<circle cx="42" cy="'+cy+'" r="3.6" fill="'+v.center+'"/>';
+        }
+      }else{
+        var np=stage===4?7:12,rx=stage===4?3.6:4.6,ry=stage===4?9:11,off=stage===4?-8:-11;
+        s+=petalRing(42,cy,rx,ry,off,np,0,v.petal,v.stroke);
+        if(variety==='sun_teddy'&&stage===5){ s+=petalRing(42,cy,2.8,6.5,-5,6,30,v.petal,v.stroke); }
+        s+='<circle cx="42" cy="'+cy+'" r="'+(stage===4?5.5:7)+'" fill="'+v.center+'"/>';
+        s+='<circle cx="40" cy="'+(cy-2)+'" r="0.9" fill="#F7EBD3"/><circle cx="44.5" cy="'+(cy+1)+'" r="0.9" fill="#F7EBD3"/><circle cx="41.5" cy="'+(cy+3)+'" r="0.9" fill="#F7EBD3"/>';
+      }
+    }
+  }
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+/* --- 水彩写实风花朵 SVG（多品种，带渐变与水彩晕染感） --- */
+function flowerWatercolorSVG(variety,stage,w,h){
+  var v=VARIETIES[variety]||VARIETIES.rose_red;
+  w=w||84; h=h||100;
+  // 花盆 + 茎
+  var s='<svg viewBox="0 0 84 100" width="'+w+'" height="'+h+'">';
+  s+='<defs>';
+  // 水彩渐变：柔和的色彩过渡
+  s+='<radialGradient id="wc_'+variety+'_p" cx="50%" cy="38%" r="60%">'
+    +'<stop offset="0%" stop-color="'+v.petal+'"/><stop offset="70%" stop-color="'+v.inner+'"/><stop offset="100%" stop-color="'+v.stroke+'"/><\x2FradialGradient>';
+  s+='<linearGradient id="wc_'+variety+'_stem" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="#7FB84A"/><stop offset="100%" stop-color="#5A8F2E"/><\x2FlinearGradient>';
+  s+='<\x2Fdefs>';
+  // 陶盆
+  s+='<path d="M24 90 q18 9 36 0 l-3 6 q-15 5 -30 0 z" fill="#C9A26B" stroke="#A9834F" stroke-width="1"/>';
+  s+='<path d="M24 90 q18 9 36 0" fill="none" stroke="#E0C49A" stroke-width="1.5"/>';
+  s+='<rect x="20" y="86" width="44" height="6" rx="3" fill="#B58A55"/>';
+  if(stage===0){
+    // 花种
+    s+='<ellipse cx="42" cy="82" rx="7" ry="10" fill="#9A6B3A" stroke="#7A4E1E" stroke-width="1"/>';
+    s+='<path d="M42 78 q3 -6 0 -10" stroke="#9A6B3A" stroke-width="1" fill="none"/>';
+  }else{
+    var stemEnd=stage===1?70:stage===2?58:stage===3?48:stage===4?44:40;
+    var sw=2.6;
+    s+='<path d="M42 92 C40 '+(92-10)+' 43 '+(stemEnd+12)+' 42 '+stemEnd+'" fill="none" stroke="url(#wc_'+variety+'_stem)" stroke-width="'+sw+'" stroke-linecap="round"/>';
+    // 叶子（水彩感：两层）
+    if(stage>=1){
+      s+='<path d="M42 80 q-14 -8 -22 -2 q-6 5 2 10 q8 4 16 -1 z" fill="#8CC45E" opacity=".85"/>';
+      s+='<path d="M42 74 q14 -8 22 -2 q6 5 -2 10 q-8 4 -16 -1 z" fill="#7FB84A" opacity=".85"/>';
+    }
+    if(stage>=3){
+      // 花苞
+      s+='<ellipse cx="42" cy="'+(stemEnd-9)+'" rx="8" ry="12" fill="url(#wc_'+variety+'_p)" stroke="'+v.stroke+'" stroke-width="1"/>';
+      s+='<path d="M42 '+(stemEnd-20)+' l-4 10 q4 3 8 0 z" fill="#6FA33E" opacity=".9"/>';
+    }
+    if(stage>=4){
+      var cy=stage===4?stemEnd-12:stemEnd-14;
+      if(v.type==='rose'){
+        // 写实玫瑰：多层花瓣
+        var full=stage===5;
+        var nLayers=full?3:2;
+        var rOuter=full?14:11;
+        for(var L=0;L<nLayers;L++){
+          var r=rOuter-L*3.5, op=full?0.92:0.78;
+          s+='<g fill="url(#wc_'+variety+'_p)" opacity="'+op+'" stroke="'+v.stroke+'" stroke-width="0.7">';
+          var np=full?8:6;
+          for(var i=0;i<np;i++){
+            var a=(i*360/np+(L*22))*Math.PI/180;
+            var px=42+Math.cos(a)*r, py=cy+Math.sin(a)*r*0.8;
+            s+='<ellipse cx="'+px+'" cy="'+py+'" rx="'+(r*0.55)+'" ry="'+(r*0.4)+'" transform="rotate('+(i*360/np+L*22)+' '+px+' '+py+')"/>';
+          }
+          s+='<\x2Fg>';
+        }
+        s+='<circle cx="42" cy="'+cy+'" r="'+(full?4:3)+'" fill="'+v.center+'"/>';
+        // 高光
+        s+='<ellipse cx="39" cy="'+(cy-4)+'" rx="3" ry="2" fill="#fff" opacity=".35"/>';
+      }else{
+        // 写实向日葵：双层花瓣 + 花盘
+        var np2=stage===5?13:9;
+        var rOut2=stage===5?15:12;
+        for(var L2=0;L2<2;L2++){
+          var r2=L2===0?rOut2:rOut2-5;
+          var op2=L2===0?0.9:0.7;
+          s+='<g fill="'+v.petal+'" opacity="'+op2+'" stroke="'+v.stroke+'" stroke-width="0.5">';
+          for(var i2=0;i2<np2;i2++){
+            var a2=(i2*360/np2+(L2*16))*Math.PI/180;
+            var px2=42+Math.cos(a2)*r2, py2=cy+Math.sin(a2)*r2*0.9;
+            s+='<ellipse cx="'+px2+'" cy="'+py2+'" rx="'+(stage===5?3.8:3)+'" ry="'+(stage===5?7.5:6)+'" transform="rotate('+(i2*360/np2+L2*16)+' '+px2+' '+py2+')"/>';
+          }
+          s+='<\x2Fg>';
+        }
+        // 花盘（写实：有籽粒纹理）
+        s+='<circle cx="42" cy="'+cy+'" r="'+(stage===5?8:6)+'" fill="'+v.center+'"/>';
+        s+='<circle cx="42" cy="'+cy+'" r="'+(stage===5?6:4.5)+'" fill="#8A5A28"/>';
+        var seeds=stage===5?9:6;
+        for(var si=0;si<seeds;si++){
+          var sa=si*360/seeds*Math.PI/180;
+          s+='<circle cx="'+(42+Math.cos(sa)*3.4)+'" cy="'+(cy+Math.sin(sa)*3.4)+'" r="0.9" fill="#6E3E18"/>';
+        }
+      }
+    }
+  }
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+function petalRing(cx,cy,rx,ry,off,n,rot,fill,stroke){
+  return '<path d="M'+x+' '+y+' q'+(angle>0?6:-6)+' -6 '+(angle>0?14:-14)+' -9" fill="none" stroke="#639922" stroke-width="2" stroke-linecap="round"/>';
+}
+function petalRing(cx,cy,rx,ry,off,n,rot,fill,stroke){
+  var s='',i;
+  for(i=0;i<n;i++){
+    var a=(rot+i*360/n)*Math.PI/180;
+    s+='<ellipse cx="'+cx+'" cy="'+cy+'" rx="'+rx+'" ry="'+ry+'" fill="'+fill+'" stroke="'+stroke+'" stroke-width="0.6" transform="translate('+(Math.cos(a)*(rx+off))+','+(Math.sin(a)*(ry+off))+') rotate('+(rot+i*360/n)+')"/>';
+  }
+  return s;
+}
+
+/* ==================== 禅境花园花（3阶段写实风 · 含进度渐进） ==================== */
+/* 花盆里的花：陶土花盆 + 写实花。
+   参数：variety 品种，stage 阶段(0种子/1萌芽/2开花)，prog 0~1 阶段内进度（决定芽大小/枝长短/花骨朵开放度）
+   开花期(prog<1)画「花骨朵（未开放）」，prog 接近 1 时逐渐绽放成完整花朵 */
+function zenFlowerSVG(variety,stage,w,h,prog){
+  var v=VARIETIES[variety]||VARIETIES.rose_red;
+  w=w||84; h=h||99;
+  stage=stage==null?2:stage;
+  prog=(prog==null||isNaN(prog))?1:prog;
+  prog=Math.max(0,Math.min(1,prog));
+  var cx=42;
+  var s='<svg viewBox="0 0 84 99" width="'+w+'" height="'+h+'">';
+  s+='<defs>';
+  s+='<radialGradient id="zf_'+variety+'_p" cx="50%" cy="40%" r="62%">'
+    +'<stop offset="0%" stop-color="'+v.petal+'"/><stop offset="72%" stop-color="'+v.inner+'"/><stop offset="100%" stop-color="'+v.stroke+'"/><\x2FradialGradient>';
+  s+='<linearGradient id="zf_'+variety+'_st" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="#8CC63F"/><stop offset="100%" stop-color="#5A8F2E"/><\x2FlinearGradient>';
+  s+='<\x2Fdefs>';
+
+  /* --- 陶土花盆（禅境花园标志性元素） --- */
+  s+='<path d="M22 78 l6 14 h28 l6 -14 z" fill="#C98B4E" stroke="#A96B32" stroke-width="1.2"/>';
+  s+='<path d="M22 78 l6 14 h28 l6 -14" fill="none" stroke="#E0B77E" stroke-width="1.4"/>';
+  s+='<rect x="18" y="73" width="48" height="7" rx="3.5" fill="#B57A40" stroke="#A96B32" stroke-width="1"/>';
+  // 盆内泥土（始终有土壤）
+  s+='<ellipse cx="42" cy="74" rx="24" ry="4.5" fill="#6E4A22" opacity=".35"/>';
+  s+='<ellipse cx="42" cy="73" rx="20" ry="6" fill="#8A5F2E"/>';
+  s+='<ellipse cx="42" cy="72" rx="15" ry="4" fill="#9A6B3A"/>';
+
+  if(stage===0){
+    /* ===== 种子期：土壤 + 一粒种子，prog 越大芽冒得越高 ===== */
+    // 种子（半埋土中，prog 越大露出来越多）
+    var seedRy=5+prog*2;
+    s+='<ellipse cx="42" cy="'+(71-prog*2)+'" rx="5" ry="'+seedRy+'" fill="#A5763F" stroke="#7A4E1E" stroke-width="1"/>';
+    // 刚冒头的小芽（prog 越大越高越绿）
+    var sproutH=4+prog*10;   // 芽高度 4~14
+    if(prog>0.05){
+      var tipY=70-sproutH;
+      s+='<path d="M42 70 C41 '+(70-sproutH*0.5)+' 43 '+(tipY+3)+' 42 '+tipY+'" fill="none" stroke="#8CC63F" stroke-width="2.2" stroke-linecap="round"/>';
+      var leafSz=2+prog*5;
+      s+='<path d="M42 '+(tipY+1)+' q-'+leafSz+' -'+leafSz+' -'+(leafSz+1)+' 0 q'+(leafSz*0.3)+' '+leafSz+' '+leafSz+' '+(leafSz*0.2)+' z" fill="#8CC63F" opacity=".9"/>';
+      s+='<path d="M42 '+(tipY+2)+' q'+leafSz+' -'+leafSz+' '+(leafSz+1)+' 0 q-'+(leafSz*0.3)+' '+leafSz+' -'+leafSz+' '+(leafSz*0.2)+' z" fill="#74B032" opacity=".9"/>';
+    }
+  }else if(stage===1){
+    /* ===== 萌芽期：光秃秃的花枝（无花），枝长随 prog 变长 ===== */
+    // 茎从泥土长到 stemTop，prog 越大越长越高
+    var stemTop=70-prog*26;   // 70(刚萌芽，短) ~ 44(快开花，长)
+    s+='<path d="M42 73 C40 66 43 '+(stemTop+10)+' 42 '+stemTop+'" fill="none" stroke="url(#zf_'+variety+'_st)" stroke-width="2.6" stroke-linecap="round"/>';
+    // 叶子随高度出现（prog 越大叶子越多/越大）
+    if(prog>0.25){
+      var leafY1=70-prog*6;
+      var lf1=3+prog*6;
+      s+='<path d="M42 '+leafY1+' q-'+(lf1+6)+' -'+(lf1+1)+' -'+(lf1+10)+' -1 q-'+(lf1*0.5)+' 4 2 9 q'+(lf1*0.5)+' 4 '+(lf1+4)+' -1 z" fill="#7CB840" opacity=".92"/>';
+      s+='<path d="M42 '+leafY1+' q'+(lf1+6)+' -'+(lf1+1)+' '+(lf1+10)+' -1 q'+(lf1*0.5)+' 4 -2 9 q-'+(lf1*0.5)+' 4 -'+(lf1+4)+' -1 z" fill="#69A334" opacity=".92"/>';
+    }
+    if(prog>0.6){
+      var leafY2=stemTop+14;
+      var lf2=2+prog*4;
+      s+='<path d="M42 '+leafY2+' q-'+(lf2+4)+' -'+(lf2+1)+' -'+(lf2+8)+' -1 q-'+(lf2*0.5)+' 3 1 6 q'+(lf2*0.5)+' 3 '+(lf2+3)+' -1 z" fill="#7CB840" opacity=".85"/>';
+      s+='<path d="M42 '+leafY2+' q'+(lf2+4)+' -'+(lf2+1)+' '+(lf2+8)+' -1 q'+(lf2*0.5)+' 3 -1 6 q-'+(lf2*0.5)+' 3 -'+(lf2+3)+' -1 z" fill="#69A334" opacity=".85"/>';
+    }
+    // 顶端：光秃秃，只有一个很小的嫩芽点（未形成花苞）
+    s+='<circle cx="42" cy="'+(stemTop-2)+'" r="2.5" fill="#8CC63F" opacity=".85"/>';
+  }else{
+    /* ===== 开花期：prog<1 是「花骨朵（未开放）」，prog=1 完全绽放 ===== */
+    var stemTop2=44;
+    s+='<path d="M42 73 C40 66 43 52 42 '+stemTop2+'" fill="none" stroke="url(#zf_'+variety+'_st)" stroke-width="2.6" stroke-linecap="round"/>';
+    // 叶子
+    s+='<path d="M42 66 q-13 -7 -20 -1 q-5 4 2 9 q7 4 14 -1 z" fill="#7CB840" opacity=".92"/>';
+    s+='<path d="M42 66 q13 -7 20 -1 q5 4 -2 9 q-7 4 -14 -1 z" fill="#69A334" opacity=".92"/>';
+    var cy2=stemTop2-13;   // 花朵/花骨朵中心
+    var open=prog;         // 开放度 0~1
+
+    if(open<0.999){
+      /* ==== 花骨朵：紧闭的花苞，随 prog 略微膨大，颜色透出品种色 ==== */
+      // 花萼（绿色托片）
+      s+='<path d="M42 '+(cy2-4)+' l-6 8 q6 3 12 0 z" fill="#69A334" opacity=".95"/>';
+      s+='<path d="M42 '+(cy2-4)+' l6 8 q-6 3 -12 0 z" fill="#5A8F2E" opacity=".9"/>';
+      // 花苞主体：椭圆，随 prog 变大（从紧闭小苞到将开大苞）
+      var budRx=4+open*7;      // 4~11
+      var budRy=6+open*9;      // 6~15
+      s+='<ellipse cx="42" cy="'+(cy2-2)+'" rx="'+budRx+'" ry="'+budRy+'" fill="url(#zf_'+variety+'_p)" stroke="'+v.stroke+'" stroke-width="1"/>';
+      // 顶部小尖（花苞闭合的尖端）
+      s+='<path d="M42 '+(cy2-2-budRy)+' q-1.5 -5 0 -8 q1.5 3 0 8 z" fill="'+v.inner+'" stroke="'+v.stroke+'" stroke-width="0.6"/>';
+      // 花苞上的品种色纹理（prog 越大越明显）
+      if(open>0.3){
+        s+='<path d="M'+(42-budRx*0.5)+' '+(cy2-2)+' q0 -6 '+(budRx)+' 0" fill="none" stroke="'+v.inner+'" stroke-width="0.8" opacity="'+(open*0.6)+'"/>';
+      }
+      // 高光
+      s+='<ellipse cx="'+(42-budRx*0.3)+'" cy="'+(cy2-4)+'" rx="'+(budRx*0.3)+'" ry="'+(budRy*0.3)+'" fill="#fff" opacity="'+(0.2+open*0.2)+'"/>';
+    }else{
+      /* ==== 完全绽放 ==== */
+      if(v.type==='rose'){
+        var layers=3, rOut=15;
+        for(var L=0; L<layers; L++){
+          var r=rOut-L*4;
+          var op=0.94-L*0.08;
+          var np=9;
+          s+='<g fill="url(#zf_'+variety+'_p)" opacity="'+op+'" stroke="'+v.stroke+'" stroke-width="0.7">';
+          for(var i=0;i<np;i++){
+            var a=(i*360/np + L*20)*Math.PI/180;
+            var px=cx+Math.cos(a)*r, py=cy2+Math.sin(a)*r*0.8;
+            s+='<ellipse cx="'+px+'" cy="'+py+'" rx="'+(r*0.58)+'" ry="'+(r*0.44)+'" transform="rotate('+(i*360/np+L*20)+' '+px+' '+py+')"/>';
+          }
+          s+='<\x2Fg>';
+        }
+        s+='<circle cx="'+cx+'" cy="'+cy2+'" r="4.5" fill="'+v.center+'"/>';
+        s+='<ellipse cx="'+(cx-3)+'" cy="'+(cy2-4)+'" rx="3" ry="2" fill="#fff" opacity=".4"/>';
+      }else{
+        for(var L2=0; L2<2; L2++){
+          var r2=L2===0?16:10.5;
+          var op2=L2===0?0.95:0.72;
+          var np2=14;
+          s+='<g fill="'+v.petal+'" opacity="'+op2+'" stroke="'+v.stroke+'" stroke-width="0.5">';
+          for(var i2=0;i2<np2;i2++){
+            var a2=(i2*360/np2 + L2*14)*Math.PI/180;
+            var px2=cx+Math.cos(a2)*r2, py2=cy2+Math.sin(a2)*r2*0.9;
+            s+='<ellipse cx="'+px2+'" cy="'+py2+'" rx="4" ry="8" transform="rotate('+(i2*360/np2+L2*14)+' '+px2+' '+py2+')"/>';
+          }
+          s+='<\x2Fg>';
+        }
+        s+='<circle cx="'+cx+'" cy="'+cy2+'" r="8.5" fill="'+v.center+'"/>';
+        s+='<circle cx="'+cx+'" cy="'+cy2+'" r="6.5" fill="#8A5A28"/>';
+        var seeds=10;
+        for(var si=0;si<seeds;si++){
+          var sa=si*360/seeds*Math.PI/180;
+          s+='<circle cx="'+(cx+Math.cos(sa)*3.8)+'" cy="'+(cy2+Math.sin(sa)*3.8)+'" r="0.9" fill="#6E3E18"/>';
+        }
+        s+='<circle cx="'+(cx-3)+'" cy="'+(cy2-2)+'" r="1.1" fill="#3A2008"/>';
+        s+='<circle cx="'+(cx+3)+'" cy="'+(cy2-2)+'" r="1.1" fill="#3A2008"/>';
+        s+='<path d="M'+(cx-3)+' '+(cy2+3)+' q3 2.6 6 0" stroke="#3A2008" stroke-width="1" fill="none" stroke-linecap="round"/>';
+      }
+    }
+  }
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+
+/* --- 完整花园 SVG（田地+花+蝴蝶+浇水动画） --- */
+function gardenSceneSVG(width,height,flowers,opts){
+  opts=opts||{};
+  width=width||640; height=height||420;
+  var s='<svg viewBox="0 0 '+width+' '+height+'" width="100%">';
+  // 天空
+  s+='<rect width="'+width+'" height="'+height*0.58+'" fill="#C9E6F5"/>';
+  // 太阳
+  s+='<circle cx="'+(width-64)+'" cy="56" r="26" fill="#F5D76E" opacity=".9"/><circle cx="'+(width-64)+'" cy="56" r="38" fill="#F5D76E" opacity=".22"/>';
+  // 云
+  s+='<g fill="#fff" opacity=".85"><ellipse cx="'+width*0.2+'" cy="64" rx="32" ry="13"/><ellipse cx="'+width*0.26+'" cy="56" rx="22" ry="11"/><\x2Fg>';
+  // 远山
+  s+='<path d="M0 '+(height*0.5)+' Q'+(width*0.18)+' '+(height*0.38)+' '+(width*0.36)+' '+(height*0.5)+' Z" fill="#BCD9A0" opacity=".8"/>';
+  s+='<path d="M'+(width*0.55)+' '+(height*0.5)+' Q'+(width*0.75)+' '+(height*0.36)+' '+width+' '+(height*0.5)+' Z" fill="#BCD9A0" opacity=".8"/>';
+  // 草地
+  s+='<rect y="'+height*0.48+'" width="'+width+'" height="'+height*0.22+'" fill="#A8C878"/>';
+  // 田地
+  s+='<rect y="'+height*0.70+'" width="'+width+'" height="'+height*0.30+'" fill="#8A6B3F"/>';
+  // 田地垄沟（透视感：下宽上窄）
+  var i;
+  for(i=0;i<4;i++){
+    var ry=height*(0.74+i*0.07);
+    s+='<ellipse cx="'+(width*0.5)+'" cy="'+ry+'" rx="'+(width*0.46)+'" ry="'+(4+i*3)+'" fill="#7A5C32" opacity=".6"/>';
+  }
+  // 花朵：种在草地上（两排，第二排稍低仍在草地内）
+  if(flowers && flowers.length){
+    var n=flowers.length;
+    var perRow=Math.min(5,Math.max(3,Math.ceil(n/2)));
+    flowers.forEach(function(f,idx){
+      var row=Math.floor(idx/perRow);
+      var col=idx%perRow;
+      var rowCount=Math.min(perRow,n-row*perRow);
+      var fw=64+row*8;                        // 前排略大
+      var fh=fw*100/84;
+      var gap=width/(rowCount+0.4);
+      var fx=gap*(col+0.7)+(row%2)*gap*0.2;   // 两排错位
+      var fy=height*(0.50+row*0.12);          // 花根落在草地内
+      var stg=f.stage==null?5:f.stage;
+      s+='<g transform="translate('+(fx-fw/2)+','+(fy-fh)+')">'+flowerSVG(f.variety,stg,fw,fh)+'<\x2Fg>';
+    });
+  }else{
+    // 空花园：田里撒几粒种子
+    for(i=0;i<5;i++){
+      s+='<ellipse cx="'+(width*(0.2+i*0.15))+'" cy="'+(height*0.78+(i%2)*14)+'" rx="4" ry="2.5" fill="#5E431F"/>';
+    }
+  }
+  // 蝴蝶（动画：沿路径飘）
+  if(opts.butterfly!==false){
+    s+='<g class="butterfly">'
+      +'<path d="M0 0 C-9 -11 -20 -6 -15 3 C-9 -2 -4 2 -7 9 C-11 4 -2 7 0 0" fill="#E79BB5" opacity=".85"/>'
+      +'<path d="M0 0 C9 -11 20 -6 15 3 C9 -2 4 2 7 9 C11 4 2 7 0 0" fill="#E79BB5" opacity=".85"/>'
+      +'<line x1="0" y1="1" x2="0" y2="8" stroke="#7A4A1E" stroke-width="1.4" stroke-linecap="round"/>'
+      +'<\x2Fg>';
+  }
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+/* --- 图表：横向条形图（模块正确率） --- */
+function barChart(rows,opt){
+  opt=opt||{};
+  var W=620,H=Math.max(200,rows.length*42+56),L=74,R=80,T=30,B=30;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%">';
+  var maxV=100;
+  rows.forEach(function(r){ if(r.v>maxV) maxV=r.v; });
+  // 目标线 80%（文字放线右侧，顶部预留 T=30 不被裁剪）
+  if(opt.target!=null){
+    var tx=L+(W-L-R)*opt.target/maxV;
+    s+='<line x1="'+tx+'" y1="'+T+'" x2="'+tx+'" y2="'+(H-B)+'" stroke="#D4A94E" stroke-width="1.5" stroke-dasharray="4 3"/>';
+    s+='<text x="'+(tx+5)+'" y="'+(T-8)+'" font-size="11" fill="#B98A2F" font-weight="700">目标 '+opt.target+'%<\x2Ftext>';
+  }
+  rows.forEach(function(r,i){
+    var y=T+i*(H-T-B)/rows.length;
+    var bh=(H-T-B)/rows.length-12;
+    var bw=(W-L-R)*r.v/maxV;
+    s+='<text x="'+(L-8)+'" y="'+(y+bh/2+4)+'" font-size="12" fill="#4A3B2A" text-anchor="end">'+esc(r.name)+'<\x2Ftext>';
+    s+='<rect x="'+L+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="6" fill="'+(r.color||'#6F9E4F')+'" opacity=".9"/>';
+    s+='<text x="'+(L+bw+6)+'" y="'+(y+bh/2+4)+'" font-size="12" fill="#4A3B2A" font-weight="700">'+Math.round(r.v)+'%<\x2Ftext>';
+  });
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+/* --- 图表：折线图（模考趋势） --- */
+function lineChart(points,opt){
+  opt=opt||{};
+  var W=620,H=220,L=44,R=16,T=18,B=32;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="100%">';
+  if(!points || points.length<2){ s+='<text x="'+(W/2)+'" y="'+(H/2)+'" font-size="13" fill="#B4A78F" text-anchor="middle">数据不足，先积累模考记录吧<\x2Ftext><\x2Fsvg>'; return s; }
+  var minV=Math.min.apply(null,points.map(function(p){return p.v;}))-5;
+  var maxV=Math.max.apply(null,points.map(function(p){return p.v;}))+5;
+  var iw=W-L-R, ih=H-T-B;
+  var X=function(i){ return L+iw*i/(points.length-1); };
+  var Y=function(v){ return T+ih*(1-(v-minV)/(maxV-minV)); };
+  // 网格
+  for(var g=0;g<=3;g++){ var gv=minV+(maxV-minV)*g/3, gy=Y(gv);
+    s+='<line x1="'+L+'" y1="'+gy+'" x2="'+(W-R)+'" y2="'+gy+'" stroke="#EEE4D0" stroke-width="1"/>';
+    s+='<text x="'+(L-6)+'" y="'+(gy+4)+'" font-size="10" fill="#B4A78F" text-anchor="end">'+Math.round(gv)+'<\x2Ftext>';
+  }
+  var path='',i;
+  for(i=0;i<points.length;i++){ path+=(i?'L':'M')+X(i)+' '+Y(points[i].v)+' '; }
+  s+='<path d="'+path+'" fill="none" stroke="#6F9E4F" stroke-width="2.5" stroke-linejoin="round"/>';
+  for(i=0;i<points.length;i++){
+    s+='<circle cx="'+X(i)+'" cy="'+Y(points[i].v)+'" r="4" fill="#fff" stroke="#6F9E4F" stroke-width="2"/>';
+    if(points[i].label){ s+='<text x="'+X(i)+'" y="'+(Y(points[i].v)-8)+'" font-size="11" fill="#4A3B2A" text-anchor="middle" font-weight="700">'+points[i].v+'<\x2Ftext>'; }
+  }
+  // x 轴标签
+  if(points.length<=8){
+    for(i=0;i<points.length;i++){ s+='<text x="'+X(i)+'" y="'+(H-10)+'" font-size="10" fill="#B4A78F" text-anchor="middle">'+esc(points[i].x)+'<\x2Ftext>'; }
+  }
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+/* --- 图表：环形图（时长分配） --- */
+function donutChart(parts,opt){
+  opt=opt||{};
+  var W=200,H=200,cx=100,cy=100,R=70,r=44;
+  var s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'">';
+  var total=0; parts.forEach(function(p){ total+=p.v; });
+  if(total===0){ s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="#EEE4D0" stroke-width="26"/>'; s+='<text x="'+cx+'" y="'+cy+'" font-size="13" fill="#B4A78F" text-anchor="middle">暂无数据<\x2Ftext><\x2Fsvg>'; return s; }
+  var start=-Math.PI/2;
+  parts.forEach(function(p){
+    var ang=p.v/total*Math.PI*2;
+    var end=start+ang;
+    var x1=cx+R*Math.cos(start),y1=cy+R*Math.sin(start),x2=cx+R*Math.cos(end),y2=cy+R*Math.sin(end);
+    var large=ang>Math.PI?1:0;
+    s+='<path d="M'+x1+' '+y1+' A'+R+' '+R+' 0 '+large+' 1 '+x2+' '+y2+'" fill="none" stroke="'+p.c+'" stroke-width="26"/>';
+    start=end;
+  });
+  s+='<text x="'+cx+'" y="'+(cy-4)+'" font-size="15" fill="#4A3B2A" text-anchor="middle" font-weight="800">'+Math.round(total)+'<\x2Ftext>';
+  s+='<text x="'+cx+'" y="'+(cy+16)+'" font-size="10" fill="#B4A78F" text-anchor="middle">总时长(h)<\x2Ftext>';
+  s+='<\x2Fsvg>';
+  return s;
+}
+
+/* 暴露 */
+window.iconSvg=iconSvg; window.initIcons=initIcons;
+window.flowerSVG=flowerSVG; window.gardenSceneSVG=gardenSceneSVG;
+window.zenFlowerSVG=zenFlowerSVG;
+window.barChart=barChart; window.lineChart=lineChart; window.donutChart=donutChart;
+</script>
